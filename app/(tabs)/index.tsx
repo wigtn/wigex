@@ -9,40 +9,46 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { formatKRW, getCurrencyFlag } from '../../lib/utils/currency';
 import { formatDisplayDate, getDaysBetween } from '../../lib/utils/date';
+import { Trip } from '../../lib/types';
 
 export default function HomeScreen() {
   const { colors } = useTheme();
-  const { activeTrip, trips, loadTrips, loadActiveTrip } = useTripStore();
+  const { activeTrip, activeTrips, trips, loadTrips, loadActiveTrips, setActiveTrip } = useTripStore();
   const { expenses, loadExpenses, getTodayTotal, getTotalByTrip } = useExpenseStore();
-  const [todayTotal, setTodayTotal] = useState(0);
-  const [tripTotal, setTripTotal] = useState(0);
+  const [tripTotals, setTripTotals] = useState<Record<string, { today: number; total: number }>>({});
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (activeTrip) {
-      loadExpenses(activeTrip.id);
+    if (activeTrips.length > 0) {
+      // 선택된 여행의 지출 로드
+      if (activeTrip) {
+        loadExpenses(activeTrip.id);
+      }
       loadTotals();
     }
-  }, [activeTrip]);
+  }, [activeTrips, activeTrip]);
 
   const loadTotals = async () => {
-    if (activeTrip) {
-      const today = await getTodayTotal(activeTrip.id);
-      const total = await getTotalByTrip(activeTrip.id);
-      setTodayTotal(today);
-      setTripTotal(total);
+    const totals: Record<string, { today: number; total: number }> = {};
+    for (const trip of activeTrips) {
+      const today = await getTodayTotal(trip.id);
+      const total = await getTotalByTrip(trip.id);
+      totals[trip.id] = { today, total };
     }
+    setTripTotals(totals);
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
     await loadTrips();
-    await loadActiveTrip();
-    if (activeTrip) {
-      await loadExpenses(activeTrip.id);
-      await loadTotals();
-    }
+    await loadActiveTrips();
+    await loadTotals();
     setRefreshing(false);
+  };
+
+  const handleTripSelect = (trip: Trip) => {
+    setActiveTrip(trip);
+    loadExpenses(trip.id);
   };
 
   const recentExpenses = expenses.slice(0, 5);
@@ -56,56 +62,86 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {activeTrip ? (
+        {activeTrips.length > 0 ? (
           <>
-            {/* 현재 여행 카드 */}
-            <Card style={styles.tripCard}>
-              <View style={styles.tripHeader}>
-                <Text style={styles.tripFlag}>{getCurrencyFlag(activeTrip.currency)}</Text>
-                <View style={styles.tripInfo}>
-                  <Text style={[styles.tripName, { color: colors.text }]}>
-                    {activeTrip.name}
-                  </Text>
-                  <Text style={[styles.tripDates, { color: colors.textSecondary }]}>
-                    {formatDisplayDate(activeTrip.startDate)} - {formatDisplayDate(activeTrip.endDate)}
-                    {' '}({getDaysBetween(activeTrip.startDate, activeTrip.endDate)}일)
-                  </Text>
-                </View>
-              </View>
+            {/* 진행 중인 여행 헤더 */}
+            {activeTrips.length > 1 && (
+              <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 12 }]}>
+                진행 중인 여행 ({activeTrips.length})
+              </Text>
+            )}
 
-              <View style={styles.tripStats}>
-                <View style={styles.statItem}>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                    오늘 지출
-                  </Text>
-                  <Text style={[styles.statValue, { color: colors.primary }]}>
-                    {formatKRW(todayTotal)}
-                  </Text>
-                </View>
-                <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-                <View style={styles.statItem}>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                    총 지출
-                  </Text>
-                  <Text style={[styles.statValue, { color: colors.text }]}>
-                    {formatKRW(tripTotal)}
-                  </Text>
-                </View>
-                {activeTrip.budget && (
-                  <>
-                    <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-                    <View style={styles.statItem}>
-                      <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                        예산
-                      </Text>
-                      <Text style={[styles.statValue, { color: colors.success }]}>
-                        {formatKRW(activeTrip.budget)}
-                      </Text>
+            {/* 여행 카드들 */}
+            {activeTrips.map((trip) => {
+              const isSelected = activeTrip?.id === trip.id;
+              const totals = tripTotals[trip.id] || { today: 0, total: 0 };
+
+              return (
+                <TouchableOpacity
+                  key={trip.id}
+                  onPress={() => handleTripSelect(trip)}
+                  activeOpacity={0.7}
+                >
+                  <Card style={[
+                    styles.tripCard,
+                    isSelected ? { borderWidth: 2, borderColor: colors.primary } : {}
+                  ]}>
+                    <View style={styles.tripHeader}>
+                      <Text style={styles.tripFlag}>{getCurrencyFlag(trip.currency)}</Text>
+                      <View style={styles.tripInfo}>
+                        <View style={styles.tripNameRow}>
+                          <Text style={[styles.tripName, { color: colors.text }]}>
+                            {trip.name}
+                          </Text>
+                          {isSelected && activeTrips.length > 1 && (
+                            <View style={[styles.selectedBadge, { backgroundColor: colors.primary }]}>
+                              <Text style={styles.selectedBadgeText}>선택됨</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={[styles.tripDates, { color: colors.textSecondary }]}>
+                          {formatDisplayDate(trip.startDate)} - {formatDisplayDate(trip.endDate)}
+                          {' '}({getDaysBetween(trip.startDate, trip.endDate)}일)
+                        </Text>
+                      </View>
                     </View>
-                  </>
-                )}
-              </View>
-            </Card>
+
+                    <View style={styles.tripStats}>
+                      <View style={styles.statItem}>
+                        <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                          오늘 지출
+                        </Text>
+                        <Text style={[styles.statValue, { color: colors.primary }]}>
+                          {formatKRW(totals.today)}
+                        </Text>
+                      </View>
+                      <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+                      <View style={styles.statItem}>
+                        <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                          총 지출
+                        </Text>
+                        <Text style={[styles.statValue, { color: colors.text }]}>
+                          {formatKRW(totals.total)}
+                        </Text>
+                      </View>
+                      {trip.budget && (
+                        <>
+                          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+                          <View style={styles.statItem}>
+                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                              예산
+                            </Text>
+                            <Text style={[styles.statValue, { color: colors.success }]}>
+                              {formatKRW(trip.budget)}
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </Card>
+                </TouchableOpacity>
+              );
+            })}
 
             {/* 최근 지출 */}
             <View style={styles.section}>
@@ -193,7 +229,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* FAB - 빠른 지출 입력 */}
-      {activeTrip && (
+      {activeTrips.length > 0 && (
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: colors.primary }]}
           onPress={() => router.push('/expense/new')}
@@ -231,9 +267,24 @@ const styles = StyleSheet.create({
   tripInfo: {
     flex: 1,
   },
+  tripNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   tripName: {
     fontSize: 20,
     fontWeight: '700',
+  },
+  selectedBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  selectedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
   },
   tripDates: {
     fontSize: 14,

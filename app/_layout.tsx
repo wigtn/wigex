@@ -9,13 +9,13 @@ export default function RootLayout() {
   const { colors, isDark } = useTheme();
   const loadRates = useExchangeRateStore((state) => state.loadRates);
   const loadTrips = useTripStore((state) => state.loadTrips);
-  const loadActiveTrip = useTripStore((state) => state.loadActiveTrip);
+  const loadActiveTrips = useTripStore((state) => state.loadActiveTrips);
 
   useEffect(() => {
     // 앱 시작 시 데이터 로드
     loadRates();
     loadTrips();
-    loadActiveTrip();
+    loadActiveTrips();
   }, []);
 
   return (

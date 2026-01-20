@@ -6,9 +6,11 @@ import * as queries from '../db/queries';
 interface TripState {
   trips: Trip[];
   activeTrip: Trip | null;
+  activeTrips: Trip[];
   isLoading: boolean;
   loadTrips: () => Promise<void>;
   loadActiveTrip: () => Promise<void>;
+  loadActiveTrips: () => Promise<void>;
   createTrip: (trip: Omit<Trip, 'id' | 'createdAt'>) => Promise<Trip>;
   updateTrip: (trip: Trip) => Promise<void>;
   deleteTrip: (id: string) => Promise<void>;
@@ -18,6 +20,7 @@ interface TripState {
 export const useTripStore = create<TripState>((set, get) => ({
   trips: [],
   activeTrip: null,
+  activeTrips: [],
   isLoading: false,
 
   loadTrips: async () => {
@@ -40,6 +43,19 @@ export const useTripStore = create<TripState>((set, get) => ({
     }
   },
 
+  loadActiveTrips: async () => {
+    try {
+      const activeTrips = await queries.getActiveTrips();
+      // 첫 번째 여행을 기본 activeTrip으로 설정
+      set({
+        activeTrips,
+        activeTrip: activeTrips.length > 0 ? activeTrips[0] : null
+      });
+    } catch (error) {
+      console.error('Failed to load active trips:', error);
+    }
+  },
+
   createTrip: async (tripData) => {
     const trip: Trip = {
       ...tripData,
@@ -52,7 +68,10 @@ export const useTripStore = create<TripState>((set, get) => ({
     // 활성 여행 업데이트
     const today = new Date().toISOString().split('T')[0];
     if (trip.startDate <= today && trip.endDate >= today) {
-      set({ activeTrip: trip });
+      set((state) => ({
+        activeTrip: trip,
+        activeTrips: [trip, ...state.activeTrips]
+      }));
     }
 
     return trip;
@@ -68,10 +87,16 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   deleteTrip: async (id) => {
     await queries.deleteTrip(id);
-    set((state) => ({
-      trips: state.trips.filter((t) => t.id !== id),
-      activeTrip: state.activeTrip?.id === id ? null : state.activeTrip,
-    }));
+    set((state) => {
+      const newActiveTrips = state.activeTrips.filter((t) => t.id !== id);
+      return {
+        trips: state.trips.filter((t) => t.id !== id),
+        activeTrips: newActiveTrips,
+        activeTrip: state.activeTrip?.id === id
+          ? (newActiveTrips.length > 0 ? newActiveTrips[0] : null)
+          : state.activeTrip,
+      };
+    });
   },
 
   setActiveTrip: (trip) => {
