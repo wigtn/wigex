@@ -1,0 +1,33 @@
+# Receipt Analysis Model - Python Dependencies
+# Fine-tuning and Training
+transformers>=4.45.0
+peft>=0.13.0
+datasets>=3.0.0
+accelerate>=1.0.0
+bitsandbytes>=0.44.0
+
+# Vision-Language Model Support
+qwen-vl-utils>=0.0.2
+torchvision>=0.16.0
+pillow>=10.0.0
+
+# Serving
+vllm>=0.6.0
+
+# Monitoring & Logging
+wandb>=0.16.0
+tensorboard>=2.15.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+tqdm>=4.65.0
+scikit-learn>=1.3.0
+
+# Image Processing
+opencv-python>=4.8.0
+
+# Utilities
+pyyaml>=6.0.0
+python-dotenv>=1.0.0
+requests>=2.31.0

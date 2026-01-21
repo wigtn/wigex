@@ -1,0 +1,92 @@
+# Qwen3-VL-2B Receipt Analysis Fine-tuning Configuration
+
+# Model Configuration
+model:
+  name: "Qwen/Qwen3-VL-2B-Instruct"
+  output_dir: "./output/qwen3-vl-2b-receipt"
+  max_length: 4096
+  image_size: 448
+
+# LoRA Configuration
+lora:
+  r: 64                    # LoRA rank
+  lora_alpha: 128          # LoRA alpha scaling
+  lora_dropout: 0.05       # Dropout for LoRA layers
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# Training Configuration
+training:
+  num_epochs: 3
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  lr_scheduler_type: "cosine"
+
+  # Optimization
+  bf16: true               # Use bfloat16 mixed precision
+  tf32: true               # Use TF32 for matrix multiplication
+  gradient_checkpointing: true
+
+  # Logging & Saving
+  logging_steps: 10
+  save_steps: 100
+  eval_steps: 100
+  save_total_limit: 3
+
+  # Evaluation
+  evaluation_strategy: "steps"
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+
+# Dataset Configuration
+dataset:
+  train_path: "./data/processed/train.json"
+  eval_path: "./data/processed/eval.json"
+  test_path: "./data/processed/test.json"
+  image_dir: "./data/raw"
+
+  # Data split ratios (if creating from annotations)
+  train_ratio: 0.8
+  eval_ratio: 0.1
+  test_ratio: 0.1
+
+# Prompt Template
+prompt:
+  system: "당신은 영수증 이미지에서 정보를 정확하게 추출하는 AI 어시스턴트입니다."
+  user_template: "<image>\n이 영수증에서 총 금액과 날짜를 추출해주세요."
+  response_format: |
+    JSON 형식으로 응답해주세요:
+    {
+      "amount": <숫자>,
+      "date": "<YYYY-MM-DD 형식>",
+      "currency": "<통화 코드>"
+    }
+
+# Hardware Configuration
+hardware:
+  use_4bit: true           # Enable 4-bit quantization for training
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_quant_type: "nf4"
+  use_nested_quant: true   # Enable nested quantization
+
+# Wandb Configuration (optional)
+wandb:
+  enabled: true
+  project: "receipt-analysis"
+  run_name: "qwen3-vl-2b-receipt-lora"
+  tags:
+    - "receipt"
+    - "vlm"
+    - "lora"

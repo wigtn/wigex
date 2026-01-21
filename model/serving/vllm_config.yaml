@@ -1,0 +1,89 @@
+# vLLM Serving Configuration for Receipt Analysis Model
+
+# Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+# Model Configuration
+model:
+  # Path to the fine-tuned model (after merging LoRA weights)
+  model_path: "./output/qwen3-vl-2b-receipt-merged"
+
+  # Model serving parameters
+  max_model_len: 4096
+  max_num_seqs: 8          # Maximum number of sequences per iteration
+  trust_remote_code: true
+
+  # GPU Configuration
+  tensor_parallel_size: 1   # Number of GPUs for tensor parallelism
+  gpu_memory_utilization: 0.9
+
+  # Quantization (optional, for lower memory usage)
+  # quantization: "awq"     # Options: awq, gptq, squeezellm, fp8
+
+# Vision Configuration
+vision:
+  image_input_type: "pixel_values"
+  max_image_size: 448
+  image_token_id: 151655    # Qwen VL image token ID
+
+# API Configuration
+api:
+  api_key: null             # Set to enable API key authentication
+  served_model_name: "qwen3-vl-2b-receipt"
+
+# Chat Template
+chat_template: |
+  {%- for message in messages %}
+  {%- if message.role == 'system' %}
+  <|im_start|>system
+  {{ message.content }}<|im_end|>
+  {%- elif message.role == 'user' %}
+  <|im_start|>user
+  {{ message.content }}<|im_end|>
+  {%- elif message.role == 'assistant' %}
+  <|im_start|>assistant
+  {{ message.content }}<|im_end|>
+  {%- endif %}
+  {%- endfor %}
+  {%- if add_generation_prompt %}
+  <|im_start|>assistant
+  {%- endif %}
+
+# Logging
+logging:
+  level: "INFO"
+
+# Health Check
+health_check:
+  enabled: true
+  endpoint: "/health"
+
+# Example Usage Commands
+# ----------------------
+# Start server:
+#   vllm serve ./output/qwen3-vl-2b-receipt-merged \
+#     --host 0.0.0.0 \
+#     --port 8000 \
+#     --max-model-len 4096 \
+#     --trust-remote-code
+#
+# With OpenAI-compatible API:
+#   vllm serve ./output/qwen3-vl-2b-receipt-merged \
+#     --served-model-name qwen3-vl-2b-receipt \
+#     --api-key your-api-key
+#
+# Test endpoint:
+#   curl http://localhost:8000/v1/chat/completions \
+#     -H "Content-Type: application/json" \
+#     -d '{
+#       "model": "qwen3-vl-2b-receipt",
+#       "messages": [
+#         {"role": "user", "content": [
+#           {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}},
+#           {"type": "text", "text": "이 영수증에서 총 금액과 날짜를 추출해주세요."}
+#         ]}
+#       ],
+#       "max_tokens": 256
+#     }'
