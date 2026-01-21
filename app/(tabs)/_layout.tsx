@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useTheme } from '../../lib/hooks/useTheme';
+import { useTheme } from '../../lib/theme';
 
 export default function TabLayout() {
   const { colors } = useTheme();

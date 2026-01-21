@@ -1,22 +1,49 @@
+// Travel Helper v2.0 - Root Layout
+
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useTheme } from '../lib/hooks/useTheme';
+import { useTheme } from '../lib/theme';
 import { useExchangeRateStore } from '../lib/stores/exchangeRateStore';
 import { useTripStore } from '../lib/stores/tripStore';
+import { useWalletStore } from '../lib/stores/walletStore';
+import { useExpenseStore } from '../lib/stores/expenseStore';
+import { migrateFromV1 } from '../lib/db/schema';
 
 export default function RootLayout() {
   const { colors, isDark } = useTheme();
   const loadRates = useExchangeRateStore((state) => state.loadRates);
   const loadTrips = useTripStore((state) => state.loadTrips);
   const loadActiveTrips = useTripStore((state) => state.loadActiveTrips);
+  const activeTrip = useTripStore((state) => state.activeTrip);
+  const loadWallets = useWalletStore((state) => state.loadWallets);
+  const loadExpenses = useExpenseStore((state) => state.loadExpenses);
 
   useEffect(() => {
-    // 앱 시작 시 데이터 로드
-    loadRates();
-    loadTrips();
-    loadActiveTrips();
+    const initApp = async () => {
+      // v1 데이터 마이그레이션 (필요한 경우)
+      try {
+        await migrateFromV1();
+      } catch (error) {
+        console.log('Migration skipped or failed:', error);
+      }
+
+      // 앱 시작 시 데이터 로드
+      await loadRates();
+      await loadTrips();
+      await loadActiveTrips();
+    };
+
+    initApp();
   }, []);
+
+  // 활성 여행이 변경되면 지갑과 지출 로드
+  useEffect(() => {
+    if (activeTrip) {
+      loadWallets(activeTrip.id);
+      loadExpenses(activeTrip.id);
+    }
+  }, [activeTrip?.id]);
 
   return (
     <>
@@ -39,7 +66,7 @@ export default function RootLayout() {
         <Stack.Screen
           name="trip/new"
           options={{
-            title: '새 여행',
+            title: '새 여행 만들기',
             presentation: 'modal',
           }}
         />

@@ -1,21 +1,25 @@
-import { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
-import { PieChart } from 'react-native-chart-kit';
+// Travel Helper - Stats Screen
+
+import { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useTheme } from '../../lib/hooks/useTheme';
+import { useTheme } from '../../lib/theme';
 import { useTripStore } from '../../lib/stores/tripStore';
 import { useExpenseStore } from '../../lib/stores/expenseStore';
-import { Card } from '../../components/ui/Card';
-import { formatKRW } from '../../lib/utils/currency';
+import { Card, ProgressBar, CategoryIcon, EmptyState } from '../../components/ui';
+import { formatKRW, formatCurrency, getCurrencyFlag } from '../../lib/utils/currency';
 import { CATEGORIES, Category } from '../../lib/utils/constants';
-import { getDaysBetween } from '../../lib/utils/date';
+import { getDaysBetween, formatDisplayDate } from '../../lib/utils/date';
 
-const screenWidth = Dimensions.get('window').width;
+type TabType = 'category' | 'currency' | 'destination';
 
 export default function StatsScreen() {
-  const { colors, isDark } = useTheme();
-  const activeTrip = useTripStore((state) => state.activeTrip);
+  const { colors, spacing, typography, borderRadius, isDark } = useTheme();
+  const { activeTrip, destinations } = useTripStore();
   const { expenses, loadExpenses, getStats } = useExpenseStore();
+
+  const [activeTab, setActiveTab] = useState<TabType>('category');
+  const [showInKRW, setShowInKRW] = useState(false);
 
   useEffect(() => {
     if (activeTrip) {
@@ -25,24 +29,31 @@ export default function StatsScreen() {
 
   const stats = activeTrip ? getStats(activeTrip.id) : null;
 
-  // 파이차트 데이터
-  const pieData = useMemo(() => {
-    if (!stats) return [];
-    return CATEGORIES.filter((cat) => stats.byCategory[cat.id] > 0).map((cat) => ({
-      name: cat.label,
-      amount: stats.byCategory[cat.id],
-      color: cat.color,
-      legendFontColor: colors.text,
-      legendFontSize: 12,
-    }));
-  }, [stats, colors.text]);
+  // 주요 통화 (가장 많이 사용된 통화)
+  const mainCurrency = useMemo(() => {
+    if (!stats || Object.keys(stats.byCurrency).length === 0) return 'KRW';
+    const sorted = Object.entries(stats.byCurrency).sort((a, b) => b[1].amountKRW - a[1].amountKRW);
+    return sorted[0][0];
+  }, [stats]);
+
+  // 통화가 여러 개인지 확인
+  const hasMultipleCurrencies = useMemo(() => {
+    if (!stats) return false;
+    return Object.keys(stats.byCurrency).length > 1;
+  }, [stats]);
 
   // 일별 평균
   const dailyAverage = useMemo(() => {
-    if (!activeTrip || !stats) return 0;
-    const days = getDaysBetween(activeTrip.startDate, activeTrip.endDate);
-    return Math.round(stats.totalKRW / days);
-  }, [activeTrip, stats]);
+    if (!activeTrip || !stats) return { krw: 0, local: 0 };
+    const today = new Date().toISOString().split('T')[0];
+    const endDate = activeTrip.endDate < today ? activeTrip.endDate : today;
+    const days = getDaysBetween(activeTrip.startDate, endDate);
+    const avgKRW = Math.round(stats.totalKRW / Math.max(1, days));
+    const avgLocal = stats.byCurrency[mainCurrency]
+      ? Math.round(stats.byCurrency[mainCurrency].amount / Math.max(1, days))
+      : 0;
+    return { krw: avgKRW, local: avgLocal };
+  }, [activeTrip, stats, mainCurrency]);
 
   // 가장 많이 쓴 카테고리
   const topCategory = useMemo(() => {
@@ -63,24 +74,114 @@ export default function StatsScreen() {
     return { date: sorted[0][0], amount: sorted[0][1] };
   }, [stats]);
 
+  // 통화별 지출 정렬
+  const sortedCurrencies = useMemo(() => {
+    if (!stats) return [];
+    return Object.entries(stats.byCurrency)
+      .sort((a, b) => b[1].amountKRW - a[1].amountKRW)
+      .map(([currency, data]) => ({
+        currency,
+        amount: data.amount,
+        amountKRW: data.amountKRW,
+      }));
+  }, [stats]);
+
+  // 방문지별 지출 정렬 (로컬 통화 포함)
+  const sortedDestinations = useMemo(() => {
+    if (!stats || !destinations || !expenses) return [];
+
+    // 방문지별로 지출을 그룹화하고 로컬 통화 금액도 계산
+    const destStats: Record<string, { amountKRW: number; localAmounts: Record<string, number> }> = {};
+
+    for (const expense of expenses) {
+      if (!expense.destinationId) continue;
+      if (!destStats[expense.destinationId]) {
+        destStats[expense.destinationId] = { amountKRW: 0, localAmounts: {} };
+      }
+      destStats[expense.destinationId].amountKRW += expense.amountKRW;
+      destStats[expense.destinationId].localAmounts[expense.currency] =
+        (destStats[expense.destinationId].localAmounts[expense.currency] || 0) + expense.amount;
+    }
+
+    return Object.entries(destStats)
+      .map(([destId, data]) => {
+        const dest = destinations.find(d => d.id === destId);
+        const primaryAmount = dest ? data.localAmounts[dest.currency] || 0 : 0;
+        return {
+          destination: dest,
+          amountKRW: data.amountKRW,
+          localAmount: primaryAmount,
+          localAmounts: data.localAmounts,
+        };
+      })
+      .filter(item => item.destination)
+      .sort((a, b) => b.amountKRW - a.amountKRW);
+  }, [stats, destinations, expenses]);
+
+  // 카테고리별 지출 정렬 (로컬 통화 포함)
+  const sortedCategories = useMemo(() => {
+    if (!stats || !expenses) return [];
+
+    // 카테고리별 로컬 통화 금액 계산
+    const categoryLocalAmounts: Record<Category, Record<string, number>> = {} as any;
+
+    for (const expense of expenses) {
+      if (!categoryLocalAmounts[expense.category]) {
+        categoryLocalAmounts[expense.category] = {};
+      }
+      categoryLocalAmounts[expense.category][expense.currency] =
+        (categoryLocalAmounts[expense.category][expense.currency] || 0) + expense.amount;
+    }
+
+    return CATEGORIES.filter((cat) => stats.byCategory[cat.id] > 0)
+      .map(cat => {
+        const localAmounts = categoryLocalAmounts[cat.id] || {};
+        const mainAmount = localAmounts[mainCurrency] || 0;
+        return {
+          ...cat,
+          amountKRW: stats.byCategory[cat.id],
+          localAmount: mainAmount,
+          localAmounts,
+          percentage: Math.round((stats.byCategory[cat.id] / stats.totalKRW) * 100),
+        };
+      })
+      .sort((a, b) => b.amountKRW - a.amountKRW);
+  }, [stats, expenses, mainCurrency]);
+
+  // 금액 포맷 헬퍼
+  const formatAmount = (amountKRW: number, localAmount?: number, currency?: string) => {
+    if (showInKRW || !localAmount || !currency) {
+      return formatKRW(amountKRW);
+    }
+    return formatCurrency(localAmount, currency);
+  };
+
+  const tabs: { id: TabType; label: string; icon: string }[] = [
+    { id: 'category', label: '카테고리', icon: 'category' },
+    { id: 'currency', label: '통화', icon: 'attach-money' },
+    { id: 'destination', label: '방문지', icon: 'place' },
+  ];
+
   if (!activeTrip) {
     return (
-      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
-        <MaterialIcons name="pie-chart" size={64} color={colors.textSecondary} />
-        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-          여행을 선택하면{'\n'}통계를 볼 수 있어요
-        </Text>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <EmptyState
+          icon="pie-chart"
+          title="여행을 선택해주세요"
+          description="여행을 선택하면 통계를 볼 수 있어요"
+        />
       </View>
     );
   }
 
   if (!stats || stats.totalKRW === 0) {
     return (
-      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
-        <MaterialIcons name="insert-chart" size={64} color={colors.textSecondary} />
-        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-          지출을 기록하면{'\n'}통계를 볼 수 있어요
-        </Text>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <EmptyState
+          icon="insert-chart"
+          title="지출 내역이 없어요"
+          description="지출을 기록하면 통계를 볼 수 있어요"
+        />
       </View>
     );
   }
@@ -88,145 +189,291 @@ export default function StatsScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { padding: spacing.base }]}
+      showsVerticalScrollIndicator={false}
     >
-      {/* 총 지출 */}
-      <Card style={styles.totalCard}>
-        <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>
+      {/* 통화 토글 */}
+      <View style={[styles.currencyToggle, { backgroundColor: colors.surface, borderRadius: borderRadius.md }]}>
+        <View style={styles.toggleLeft}>
+          <Text style={[typography.bodySmall, { color: colors.text }]}>
+            {getCurrencyFlag(mainCurrency)} {mainCurrency}
+          </Text>
+          {hasMultipleCurrencies && (
+            <Text style={[typography.caption, { color: colors.textTertiary, marginLeft: 4 }]}>
+              외 {Object.keys(stats.byCurrency).length - 1}개
+            </Text>
+          )}
+        </View>
+        <View style={styles.toggleRight}>
+          <Text style={[typography.caption, { color: showInKRW ? colors.primary : colors.textSecondary }]}>
+            원화로 보기
+          </Text>
+          <Switch
+            value={showInKRW}
+            onValueChange={setShowInKRW}
+            trackColor={{ false: colors.border, true: colors.primaryLight }}
+            thumbColor={showInKRW ? colors.primary : colors.textTertiary}
+          />
+        </View>
+      </View>
+
+      {/* 총 지출 카드 */}
+      <Card style={[styles.totalCard, { marginTop: spacing.md }]}>
+        <Text style={[typography.caption, { color: colors.textSecondary }]}>
           {activeTrip.name} 총 지출
         </Text>
         <Text style={[styles.totalValue, { color: colors.text }]}>
-          {formatKRW(stats.totalKRW)}
+          {showInKRW
+            ? formatKRW(stats.totalKRW)
+            : hasMultipleCurrencies
+              ? formatKRW(stats.totalKRW)
+              : formatCurrency(stats.byCurrency[mainCurrency]?.amount || 0, mainCurrency)}
         </Text>
+        {!showInKRW && !hasMultipleCurrencies && (
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            ≈ {formatKRW(stats.totalKRW)}
+          </Text>
+        )}
+
+        {/* 예산 진행률 */}
         {activeTrip.budget && (
-          <View style={styles.budgetRow}>
-            <View
-              style={[
-                styles.budgetBar,
-                { backgroundColor: colors.border },
-              ]}
-            >
-              <View
+          <View style={[styles.budgetSection, { marginTop: spacing.md }]}>
+            <ProgressBar
+              progress={Math.min(stats.totalKRW / activeTrip.budget, 1)}
+              color={stats.totalKRW > activeTrip.budget ? colors.error : colors.primary}
+              height={8}
+            />
+            <View style={styles.budgetLabels}>
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                예산 {formatKRW(activeTrip.budget)}
+              </Text>
+              <Text
                 style={[
-                  styles.budgetFill,
-                  {
-                    backgroundColor:
-                      stats.totalKRW > activeTrip.budget ? colors.error : colors.primary,
-                    width: `${Math.min((stats.totalKRW / activeTrip.budget) * 100, 100)}%`,
-                  },
+                  typography.labelSmall,
+                  { color: stats.totalKRW > activeTrip.budget ? colors.error : colors.primary },
                 ]}
-              />
+              >
+                {Math.round((stats.totalKRW / activeTrip.budget) * 100)}%
+              </Text>
             </View>
-            <Text style={[styles.budgetText, { color: colors.textSecondary }]}>
-              예산 {formatKRW(activeTrip.budget)} 중{' '}
-              {Math.round((stats.totalKRW / activeTrip.budget) * 100)}%
-            </Text>
           </View>
         )}
       </Card>
 
-      {/* 카테고리별 파이차트 */}
-      <Card style={styles.chartCard}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          카테고리별 지출
-        </Text>
-        {pieData.length > 0 && (
-          <PieChart
-            data={pieData}
-            width={screenWidth - 64}
-            height={200}
-            chartConfig={{
-              color: () => colors.text,
-              labelColor: () => colors.text,
-            }}
-            accessor="amount"
-            backgroundColor="transparent"
-            paddingLeft="0"
-            absolute
-          />
-        )}
-      </Card>
-
-      {/* 통계 카드들 */}
-      <View style={styles.statsGrid}>
-        <Card style={styles.statCard}>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+      {/* 요약 카드들 */}
+      <View style={[styles.summaryGrid, { marginTop: spacing.md }]}>
+        <Card style={styles.summaryCard}>
+          <MaterialIcons name="today" size={24} color={colors.secondary} />
+          <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.xs }]}>
             일 평균
           </Text>
-          <Text style={[styles.statValue, { color: colors.text }]}>
-            {formatKRW(dailyAverage)}
+          <Text style={[typography.titleMedium, { color: colors.text }]}>
+            {showInKRW || hasMultipleCurrencies
+              ? formatKRW(dailyAverage.krw)
+              : formatCurrency(dailyAverage.local, mainCurrency)}
           </Text>
         </Card>
 
-        <Card style={styles.statCard}>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+        <Card style={styles.summaryCard}>
+          <MaterialIcons name="receipt-long" size={24} color={colors.accent} />
+          <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.xs }]}>
             지출 건수
           </Text>
-          <Text style={[styles.statValue, { color: colors.text }]}>
+          <Text style={[typography.titleMedium, { color: colors.text }]}>
             {expenses.length}건
           </Text>
         </Card>
 
         {topCategory && (
-          <Card style={styles.statCard}>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-              가장 많이 쓴 곳
+          <Card style={styles.summaryCard}>
+            <CategoryIcon category={topCategory.id} size="small" />
+            <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.xs }]}>
+              최다 지출
             </Text>
-            <Text style={[styles.statValue, { color: topCategory.color }]}>
+            <Text style={[typography.titleMedium, { color: colors.text }]}>
               {topCategory.label}
-            </Text>
-            <Text style={[styles.statSubValue, { color: colors.textSecondary }]}>
-              {formatKRW(topCategory.amount)}
             </Text>
           </Card>
         )}
 
         {topDay && (
-          <Card style={styles.statCard}>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-              가장 많이 쓴 날
+          <Card style={styles.summaryCard}>
+            <MaterialIcons name="trending-up" size={24} color={colors.error} />
+            <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.xs }]}>
+              최대 지출일
             </Text>
-            <Text style={[styles.statValue, { color: colors.text }]}>
-              {topDay.date.split('-').slice(1).join('/')}
-            </Text>
-            <Text style={[styles.statSubValue, { color: colors.textSecondary }]}>
-              {formatKRW(topDay.amount)}
+            <Text style={[typography.titleMedium, { color: colors.text }]}>
+              {formatDisplayDate(topDay.date)}
             </Text>
           </Card>
         )}
       </View>
 
-      {/* 카테고리별 상세 */}
-      <Card style={styles.detailCard}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          카테고리별 상세
-        </Text>
-        {CATEGORIES.map((category) => {
-          const amount = stats.byCategory[category.id] || 0;
-          if (amount === 0) return null;
-          const percentage = Math.round((amount / stats.totalKRW) * 100);
-          return (
-            <View key={category.id} style={styles.categoryRow}>
-              <View style={styles.categoryInfo}>
-                <View
-                  style={[styles.categoryDot, { backgroundColor: category.color }]}
-                />
-                <Text style={[styles.categoryLabel, { color: colors.text }]}>
-                  {category.label}
-                </Text>
+      {/* 탭 */}
+      <View style={[styles.tabContainer, { marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: borderRadius.lg }]}>
+        {tabs.map((tab) => (
+          <TouchableOpacity
+            key={tab.id}
+            style={[
+              styles.tab,
+              activeTab === tab.id && {
+                backgroundColor: colors.primary,
+                borderRadius: borderRadius.md,
+              },
+            ]}
+            onPress={() => setActiveTab(tab.id)}
+          >
+            <MaterialIcons
+              name={tab.icon as keyof typeof MaterialIcons.glyphMap}
+              size={18}
+              color={activeTab === tab.id ? '#FFFFFF' : colors.textSecondary}
+            />
+            <Text
+              style={[
+                typography.labelSmall,
+                {
+                  color: activeTab === tab.id ? '#FFFFFF' : colors.textSecondary,
+                  marginLeft: 4,
+                },
+              ]}
+            >
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* 카테고리별 */}
+      {activeTab === 'category' && (
+        <Card style={{ marginTop: spacing.md }}>
+          <Text style={[typography.titleSmall, { color: colors.text, marginBottom: spacing.md }]}>
+            카테고리별 지출
+          </Text>
+          {sortedCategories.map((category, index) => (
+            <View
+              key={category.id}
+              style={[
+                styles.detailRow,
+                index < sortedCategories.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 },
+              ]}
+            >
+              <View style={styles.detailLeft}>
+                <CategoryIcon category={category.id} size="small" />
+                <View style={{ marginLeft: spacing.sm }}>
+                  <Text style={[typography.bodyMedium, { color: colors.text }]}>
+                    {category.label}
+                  </Text>
+                  <ProgressBar
+                    progress={category.amountKRW / stats.totalKRW}
+                    color={isDark ? category.darkColor : category.lightColor}
+                    height={4}
+                    style={{ width: 100, marginTop: 4 }}
+                  />
+                </View>
               </View>
-              <View style={styles.categoryAmount}>
-                <Text style={[styles.amountText, { color: colors.text }]}>
-                  {formatKRW(amount)}
+              <View style={styles.detailRight}>
+                <Text style={[typography.titleSmall, { color: colors.text }]}>
+                  {showInKRW || hasMultipleCurrencies
+                    ? formatKRW(category.amountKRW)
+                    : formatCurrency(category.localAmount, mainCurrency)}
                 </Text>
-                <Text style={[styles.percentText, { color: colors.textSecondary }]}>
-                  {percentage}%
+                <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                  {category.percentage}%
                 </Text>
               </View>
             </View>
-          );
-        })}
-      </Card>
+          ))}
+        </Card>
+      )}
+
+      {/* 통화별 */}
+      {activeTab === 'currency' && (
+        <Card style={{ marginTop: spacing.md }}>
+          <Text style={[typography.titleSmall, { color: colors.text, marginBottom: spacing.md }]}>
+            통화별 지출
+          </Text>
+          {sortedCurrencies.map((item, index) => (
+            <View
+              key={item.currency}
+              style={[
+                styles.detailRow,
+                index < sortedCurrencies.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 },
+              ]}
+            >
+              <View style={styles.detailLeft}>
+                <Text style={styles.currencyFlag}>{getCurrencyFlag(item.currency)}</Text>
+                <View style={{ marginLeft: spacing.sm }}>
+                  <Text style={[typography.bodyMedium, { color: colors.text }]}>
+                    {item.currency}
+                  </Text>
+                  <Text style={[typography.titleSmall, { color: colors.primary }]}>
+                    {formatCurrency(item.amount, item.currency)}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.detailRight}>
+                <Text style={[typography.bodyMedium, { color: colors.textSecondary }]}>
+                  ≈ {formatKRW(item.amountKRW)}
+                </Text>
+                <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                  {Math.round((item.amountKRW / stats.totalKRW) * 100)}%
+                </Text>
+              </View>
+            </View>
+          ))}
+        </Card>
+      )}
+
+      {/* 방문지별 */}
+      {activeTab === 'destination' && (
+        <Card style={{ marginTop: spacing.md }}>
+          <Text style={[typography.titleSmall, { color: colors.text, marginBottom: spacing.md }]}>
+            방문지별 지출
+          </Text>
+          {sortedDestinations.length === 0 ? (
+            <Text style={[typography.bodyMedium, { color: colors.textSecondary, textAlign: 'center', padding: spacing.lg }]}>
+              방문지별 지출 데이터가 없습니다
+            </Text>
+          ) : (
+            sortedDestinations.map((item, index) => (
+              <View
+                key={item.destination?.id}
+                style={[
+                  styles.detailRow,
+                  index < sortedDestinations.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 },
+                ]}
+              >
+                <View style={styles.detailLeft}>
+                  <Text style={styles.currencyFlag}>
+                    {getCurrencyFlag(item.destination?.currency || 'USD')}
+                  </Text>
+                  <View style={{ marginLeft: spacing.sm }}>
+                    <Text style={[typography.bodyMedium, { color: colors.text }]}>
+                      {item.destination?.city
+                        ? `${item.destination.country} · ${item.destination.city}`
+                        : item.destination?.country}
+                    </Text>
+                    <Text style={[typography.titleSmall, { color: colors.primary }]}>
+                      {formatCurrency(item.localAmount, item.destination?.currency || 'USD')}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.detailRight}>
+                  <Text style={[typography.bodyMedium, { color: colors.textSecondary }]}>
+                    ≈ {formatKRW(item.amountKRW)}
+                  </Text>
+                  <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                    {Math.round((item.amountKRW / stats.totalKRW) * 100)}%
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </Card>
+      )}
+
+      {/* 하단 여백 */}
+      <View style={{ height: 100 }} />
     </ScrollView>
   );
 }
@@ -235,115 +482,77 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  centered: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   content: {
-    padding: 16,
     paddingBottom: 40,
   },
-  emptyText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 16,
-    lineHeight: 24,
+  currencyToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+  },
+  toggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toggleRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   totalCard: {
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  totalLabel: {
-    fontSize: 14,
-    marginBottom: 4,
+    paddingVertical: 24,
   },
   totalValue: {
     fontSize: 36,
     fontWeight: '700',
+    marginTop: 4,
   },
-  budgetRow: {
+  budgetSection: {
     width: '100%',
-    marginTop: 16,
   },
-  budgetBar: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  budgetFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  budgetText: {
-    fontSize: 12,
+  budgetLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginTop: 8,
-    textAlign: 'center',
   },
-  chartCard: {
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 16,
-    alignSelf: 'flex-start',
-  },
-  statsGrid: {
+  summaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 16,
   },
-  statCard: {
+  summaryCard: {
     width: '47%',
     alignItems: 'center',
+    paddingVertical: 16,
   },
-  statLabel: {
-    fontSize: 12,
-    marginBottom: 4,
+  tabContainer: {
+    flexDirection: 'row',
+    padding: 4,
   },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '700',
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
   },
-  statSubValue: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  detailCard: {
-    marginBottom: 16,
-  },
-  categoryRow: {
+  detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
   },
-  categoryInfo: {
+  detailLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
-  categoryDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  categoryLabel: {
-    fontSize: 16,
-  },
-  categoryAmount: {
+  detailRight: {
     alignItems: 'flex-end',
   },
-  amountText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  percentText: {
-    fontSize: 12,
-    marginTop: 2,
+  currencyFlag: {
+    fontSize: 28,
   },
 });

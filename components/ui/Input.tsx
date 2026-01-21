@@ -1,36 +1,75 @@
+// Travel Helper v2.0 - Input Component
+
 import React from 'react';
 import { TextInput, View, Text, StyleSheet, TextInputProps, ViewStyle } from 'react-native';
-import { useTheme } from '../../lib/hooks/useTheme';
+import { useTheme } from '../../lib/theme';
 
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
+  helperText?: string;
   containerStyle?: ViewStyle;
+  inputStyle?: ViewStyle;
+  leftElement?: React.ReactNode;
+  rightElement?: React.ReactNode;
 }
 
-export function Input({ label, error, containerStyle, style, ...props }: InputProps) {
-  const { colors } = useTheme();
+export function Input({
+  label,
+  error,
+  helperText,
+  containerStyle,
+  inputStyle,
+  leftElement,
+  rightElement,
+  style,
+  ...props
+}: InputProps) {
+  const { colors, borderRadius, spacing, typography } = useTheme();
 
   return (
     <View style={[styles.container, containerStyle]}>
       {label && (
-        <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
+        <Text style={[styles.label, typography.labelMedium, { color: colors.text }]}>
+          {label}
+        </Text>
       )}
-      <TextInput
+      <View
         style={[
-          styles.input,
+          styles.inputContainer,
           {
             backgroundColor: colors.surface,
             borderColor: error ? colors.error : colors.border,
-            color: colors.text,
+            borderRadius: borderRadius.md,
           },
-          style,
         ]}
-        placeholderTextColor={colors.textSecondary}
-        {...props}
-      />
+      >
+        {leftElement && <View style={styles.leftElement}>{leftElement}</View>}
+        <TextInput
+          style={[
+            styles.input,
+            typography.bodyLarge,
+            {
+              color: colors.text,
+              flex: 1,
+            },
+            inputStyle,
+            style,
+          ]}
+          placeholderTextColor={colors.textTertiary}
+          {...props}
+        />
+        {rightElement && <View style={styles.rightElement}>{rightElement}</View>}
+      </View>
       {error && (
-        <Text style={[styles.error, { color: colors.error }]}>{error}</Text>
+        <Text style={[styles.error, typography.caption, { color: colors.error }]}>
+          {error}
+        </Text>
+      )}
+      {helperText && !error && (
+        <Text style={[styles.helper, typography.caption, { color: colors.textSecondary }]}>
+          {helperText}
+        </Text>
       )}
     </View>
   );
@@ -41,19 +80,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '500',
     marginBottom: 8,
   },
-  input: {
-    height: 48,
-    borderRadius: 12,
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
+    minHeight: 48,
+  },
+  input: {
     paddingHorizontal: 16,
-    fontSize: 16,
+    paddingVertical: 12,
+  },
+  leftElement: {
+    paddingLeft: 12,
+  },
+  rightElement: {
+    paddingRight: 12,
   },
   error: {
-    fontSize: 12,
+    marginTop: 4,
+  },
+  helper: {
     marginTop: 4,
   },
 });

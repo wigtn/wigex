@@ -1,13 +1,2 @@
-import { useColorScheme } from 'react-native';
-import { COLORS } from '../utils/constants';
-
-export function useTheme() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const colors = isDark ? COLORS.dark : COLORS.light;
-
-  return {
-    isDark,
-    colors,
-  };
-}
+// Travel Helper v2.0 - useTheme Hook (re-export from theme system)
+export { useTheme } from '../theme';
