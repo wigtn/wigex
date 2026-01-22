@@ -1,0 +1,216 @@
+// Prisma Schema for Travel Helper v3.0
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// User & Authentication
+// ============================================
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String?   @map("password_hash")
+  name         String?
+  provider     String    @default("local") // local, apple, google
+  providerId   String?   @map("provider_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  trips         Trip[]
+  expenses      Expense[]
+  wallets       Wallet[]
+  chatMessages  ChatMessage[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// Trip & Destination
+// ============================================
+
+model Trip {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  name           String
+  startDate      DateTime  @map("start_date") @db.Date
+  endDate        DateTime? @map("end_date") @db.Date
+  budget         Decimal?  @db.Decimal(15, 2)
+  budgetCurrency String    @default("KRW") @map("budget_currency") @db.VarChar(3)
+  status         String    @default("active") // active, completed, cancelled
+  coverImage     String?   @map("cover_image")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destinations Destination[]
+  expenses     Expense[]
+  wallets      Wallet[]
+  chatMessages ChatMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("trips")
+}
+
+model Destination {
+  id         String    @id @default(uuid())
+  tripId     String    @map("trip_id")
+  country    String
+  city       String?
+  currency   String    @db.VarChar(3)
+  startDate  DateTime? @map("start_date") @db.Date
+  endDate    DateTime? @map("end_date") @db.Date
+  orderIndex Int       @default(0) @map("order_index")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@index([tripId])
+  @@map("destinations")
+}
+
+// ============================================
+// Expense
+// ============================================
+
+model Expense {
+  id            String    @id @default(uuid())
+  tripId        String    @map("trip_id")
+  userId        String    @map("user_id")
+  destinationId String?   @map("destination_id")
+  walletId      String?   @map("wallet_id")
+
+  // Amount
+  amount       Decimal @db.Decimal(15, 2)
+  currency     String  @db.VarChar(3)
+  exchangeRate Decimal @map("exchange_rate") @db.Decimal(15, 6)
+  amountKRW    Decimal @map("amount_krw") @db.Decimal(15, 2)
+
+  // Classification
+  category      String // food, transport, shopping, lodging, activity, etc
+  paymentMethod String @default("card") @map("payment_method") // card, cash, wallet
+
+  // Details
+  description String?
+  memo        String?
+  expenseDate DateTime  @map("expense_date") @db.Date
+  expenseTime DateTime? @map("expense_time") @db.Time
+
+  // OCR
+  receiptImageUrl String?  @map("receipt_image_url")
+  ocrProcessed    Boolean  @default(false) @map("ocr_processed")
+  ocrConfidence   Decimal? @map("ocr_confidence") @db.Decimal(3, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  trip        Trip         @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destination Destination? @relation(fields: [destinationId], references: [id])
+  wallet      Wallet?      @relation(fields: [walletId], references: [id])
+
+  @@index([tripId])
+  @@index([userId])
+  @@index([expenseDate])
+  @@index([category])
+  @@map("expenses")
+}
+
+// ============================================
+// Wallet
+// ============================================
+
+model Wallet {
+  id        String   @id @default(uuid())
+  tripId    String   @map("trip_id")
+  userId    String   @map("user_id")
+  currency  String   @db.VarChar(3)
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  trip         Trip                @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+  expenses     Expense[]
+
+  @@index([tripId])
+  @@index([userId])
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id           String   @id @default(uuid())
+  walletId     String   @map("wallet_id")
+  type         String // deposit, withdraw, adjust
+  amount       Decimal  @db.Decimal(15, 2)
+  exchangeRate Decimal? @map("exchange_rate") @db.Decimal(15, 6)
+  amountKRW    Decimal? @map("amount_krw") @db.Decimal(15, 2)
+  memo         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@map("wallet_transactions")
+}
+
+// ============================================
+// Exchange Rate Cache
+// ============================================
+
+model ExchangeRate {
+  id           Int      @id @default(autoincrement())
+  baseCurrency String   @default("KRW") @map("base_currency") @db.VarChar(3)
+  rates        Json
+  source       String?
+  fetchedAt    DateTime @default(now()) @map("fetched_at")
+
+  @@map("exchange_rates")
+}
+
+// ============================================
+// Chat (AI Chatbot)
+// ============================================
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tripId    String?  @map("trip_id")
+  role      String // user, assistant
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip Trip? @relation(fields: [tripId], references: [id], onDelete: SetNull)
+
+  @@index([userId, tripId])
+  @@map("chat_messages")
+}

@@ -1,6 +1,6 @@
 {
   "name": "wigtn-travel-helper",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
@@ -11,9 +11,18 @@
     "typecheck": "turbo run typecheck",
     "mobile": "pnpm --filter @wigtn/mobile",
     "api": "pnpm --filter @wigtn/api",
-    "ai": "pnpm --filter @wigtn/ai-service",
-    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\""
+    "shared": "pnpm --filter @wigtn/shared",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules .turbo apps/*/.turbo",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
+    "docker:prod:up": "docker compose -f docker/docker-compose.prod.yml up -d --build",
+    "docker:prod:down": "docker compose -f docker/docker-compose.prod.yml down",
+    "db:migrate": "pnpm --filter @wigtn/api prisma:migrate",
+    "db:push": "pnpm --filter @wigtn/api prisma:push",
+    "db:studio": "pnpm --filter @wigtn/api prisma:studio",
+    "db:generate": "pnpm --filter @wigtn/api prisma:generate"
   },
   "devDependencies": {
     "prettier": "^3.4.2",

@@ -1,0 +1,96 @@
+# Travel Helper v3.0 - Docker Compose (Production)
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: travel-helper-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-travel_helper}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - travel-helper-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: travel-helper-redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - travel-helper-network
+
+  # NestJS API
+  api:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    container_name: travel-helper-api
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-travel_helper}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      AI_PROVIDER: ${AI_PROVIDER:-groq}
+      AI_SERVICE_URL: http://ai-service:8000
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - travel-helper-network
+
+  # Python AI Service (for self-hosted mode)
+  ai-service:
+    build:
+      context: ../apps/ai-service
+      dockerfile: Dockerfile
+    container_name: travel-helper-ai
+    restart: always
+    environment:
+      SKIP_MODEL_LOADING: ${SKIP_MODEL_LOADING:-false}
+      VLM_MODEL: ${VLM_MODEL:-Qwen/Qwen2-VL-7B-Instruct}
+      LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - travel-helper-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  travel-helper-network:
+    driver: bridge

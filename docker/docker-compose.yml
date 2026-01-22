@@ -1,0 +1,76 @@
+# Travel Helper v3.0 - Docker Compose (Development)
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: travel-helper-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: travel_helper
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: travel-helper-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # NestJS API (Development - run locally with pnpm dev)
+  # api:
+  #   build:
+  #     context: ../apps/api
+  #     dockerfile: Dockerfile
+  #   container_name: travel-helper-api
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: development
+  #     PORT: 3000
+  #     DATABASE_URL: postgresql://postgres:postgres@postgres:5432/travel_helper
+  #     REDIS_URL: redis://redis:6379
+  #     JWT_SECRET: your-jwt-secret-key-min-32-chars
+  #     JWT_REFRESH_SECRET: your-jwt-refresh-secret-key
+  #     AI_PROVIDER: groq
+  #     AI_SERVICE_URL: http://ai-service:8000
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  # Python AI Service (Development - run locally)
+  # ai-service:
+  #   build:
+  #     context: ../apps/ai-service
+  #     dockerfile: Dockerfile
+  #   container_name: travel-helper-ai
+  #   restart: unless-stopped
+  #   environment:
+  #     SKIP_MODEL_LOADING: "true"
+  #   ports:
+  #     - "8000:8000"
+
+volumes:
+  postgres_data:
+  redis_data:
