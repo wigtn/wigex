@@ -8,7 +8,7 @@ import {
   Param,
   Query,
   UseGuards,
-  Request,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 
@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ExpenseService } from './expense.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
+import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
 
 @ApiTags('expenses')
 @Controller()
@@ -30,7 +31,7 @@ export class ExpenseController {
   @ApiQuery({ name: 'startDate', required: false })
   @ApiQuery({ name: 'endDate', required: false })
   async findAll(
-    @Request() req,
+    @Req() req: AuthenticatedRequest,
     @Param('tripId') tripId: string,
     @Query('category') category?: string,
     @Query('startDate') startDate?: string,
@@ -46,7 +47,7 @@ export class ExpenseController {
   @Post('trips/:tripId/expenses')
   @ApiOperation({ summary: 'Create a new expense' })
   async create(
-    @Request() req,
+    @Req() req: AuthenticatedRequest,
     @Param('tripId') tripId: string,
     @Body() createExpenseDto: CreateExpenseDto,
   ) {
@@ -55,20 +56,20 @@ export class ExpenseController {
 
   @Get('trips/:tripId/expenses/stats')
   @ApiOperation({ summary: 'Get expense statistics for a trip' })
-  async getStats(@Request() req, @Param('tripId') tripId: string) {
+  async getStats(@Req() req: AuthenticatedRequest, @Param('tripId') tripId: string) {
     return this.expenseService.getStats(req.user.id, tripId);
   }
 
   @Get('expenses/:id')
   @ApiOperation({ summary: 'Get expense by ID' })
-  async findOne(@Request() req, @Param('id') id: string) {
+  async findOne(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.expenseService.findOne(req.user.id, id);
   }
 
   @Patch('expenses/:id')
   @ApiOperation({ summary: 'Update expense' })
   async update(
-    @Request() req,
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() updateExpenseDto: UpdateExpenseDto,
   ) {
@@ -77,7 +78,7 @@ export class ExpenseController {
 
   @Delete('expenses/:id')
   @ApiOperation({ summary: 'Delete expense' })
-  async remove(@Request() req, @Param('id') id: string) {
+  async remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.expenseService.remove(req.user.id, id);
   }
 }

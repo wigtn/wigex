@@ -3,7 +3,7 @@ import {
   Post,
   Body,
   UseGuards,
-  Request,
+  Req,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -16,6 +16,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { SocialLoginDto } from './dto/social-login.dto';
+import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -36,7 +37,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  async login(@Request() req, @Body() loginDto: LoginDto) {
+  async login(@Req() req: AuthenticatedRequest, @Body() _loginDto: LoginDto) {
     return this.authService.login(req.user);
   }
 
@@ -54,7 +55,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout and invalidate refresh token' })
-  async logout(@Request() req, @Body() body: { refreshToken: string }) {
+  async logout(@Req() req: AuthenticatedRequest, @Body() body: { refreshToken: string }) {
     return this.authService.logout(req.user.id, body.refreshToken);
   }
 

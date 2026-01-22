@@ -7,7 +7,7 @@ import { ExpenseService } from '../expense/expense.service';
 import { AnalyzeReceiptDto } from './dto/analyze-receipt.dto';
 import { ChatDto } from './dto/chat.dto';
 
-interface ReceiptAnalysis {
+export interface ReceiptAnalysis {
   store: string;
   date: string;
   time?: string;

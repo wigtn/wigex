@@ -54,11 +54,13 @@ export class TripService {
   }
 
   async create(userId: string, createTripDto: CreateTripDto) {
-    const { destinations, ...tripData } = createTripDto;
+    const { destinations, startDate, endDate, ...tripData } = createTripDto;
 
     return this.prisma.trip.create({
       data: {
         ...tripData,
+        startDate: new Date(startDate),
+        endDate: endDate ? new Date(endDate) : null,
         userId,
         destinations: destinations
           ? {

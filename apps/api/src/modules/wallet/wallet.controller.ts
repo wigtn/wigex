@@ -6,7 +6,7 @@ import {
   Body,
   Param,
   UseGuards,
-  Request,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WalletService } from './wallet.service';
 import { CreateWalletDto } from './dto/create-wallet.dto';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
 
 @ApiTags('wallets')
 @Controller()
@@ -24,14 +25,14 @@ export class WalletController {
 
   @Get('trips/:tripId/wallets')
   @ApiOperation({ summary: 'Get all wallets for a trip' })
-  async findAll(@Request() req, @Param('tripId') tripId: string) {
+  async findAll(@Req() req: AuthenticatedRequest, @Param('tripId') tripId: string) {
     return this.walletService.findAll(req.user.id, tripId);
   }
 
   @Post('trips/:tripId/wallets')
   @ApiOperation({ summary: 'Create a new wallet' })
   async create(
-    @Request() req,
+    @Req() req: AuthenticatedRequest,
     @Param('tripId') tripId: string,
     @Body() createWalletDto: CreateWalletDto,
   ) {
@@ -40,26 +41,26 @@ export class WalletController {
 
   @Get('wallets/:id')
   @ApiOperation({ summary: 'Get wallet by ID with balance' })
-  async findOne(@Request() req, @Param('id') id: string) {
+  async findOne(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.walletService.findOne(req.user.id, id);
   }
 
   @Delete('wallets/:id')
   @ApiOperation({ summary: 'Delete wallet' })
-  async remove(@Request() req, @Param('id') id: string) {
+  async remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.walletService.remove(req.user.id, id);
   }
 
   @Get('wallets/:id/transactions')
   @ApiOperation({ summary: 'Get wallet transactions' })
-  async getTransactions(@Request() req, @Param('id') id: string) {
+  async getTransactions(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.walletService.getTransactions(req.user.id, id);
   }
 
   @Post('wallets/:id/transactions')
   @ApiOperation({ summary: 'Add transaction to wallet' })
   async addTransaction(
-    @Request() req,
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() createTransactionDto: CreateTransactionDto,
   ) {

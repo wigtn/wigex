@@ -8,7 +8,7 @@ import {
   Param,
   Query,
   UseGuards,
-  Request,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 
@@ -17,6 +17,7 @@ import { TripService } from './trip.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { CreateDestinationDto } from './dto/create-destination.dto';
+import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
 
 @ApiTags('trips')
 @Controller('trips')
@@ -28,26 +29,26 @@ export class TripController {
   @Get()
   @ApiOperation({ summary: 'Get all trips for current user' })
   @ApiQuery({ name: 'status', required: false, enum: ['active', 'completed', 'cancelled'] })
-  async findAll(@Request() req, @Query('status') status?: string) {
+  async findAll(@Req() req: AuthenticatedRequest, @Query('status') status?: string) {
     return this.tripService.findAll(req.user.id, status);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a new trip' })
-  async create(@Request() req, @Body() createTripDto: CreateTripDto) {
+  async create(@Req() req: AuthenticatedRequest, @Body() createTripDto: CreateTripDto) {
     return this.tripService.create(req.user.id, createTripDto);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get trip by ID' })
-  async findOne(@Request() req, @Param('id') id: string) {
+  async findOne(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.tripService.findOne(req.user.id, id);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update trip' })
   async update(
-    @Request() req,
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() updateTripDto: UpdateTripDto,
   ) {
@@ -56,21 +57,21 @@ export class TripController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete trip' })
-  async remove(@Request() req, @Param('id') id: string) {
+  async remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.tripService.remove(req.user.id, id);
   }
 
   // Destinations
   @Get(':id/destinations')
   @ApiOperation({ summary: 'Get all destinations for a trip' })
-  async findDestinations(@Request() req, @Param('id') id: string) {
+  async findDestinations(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.tripService.findDestinations(req.user.id, id);
   }
 
   @Post(':id/destinations')
   @ApiOperation({ summary: 'Add destination to trip' })
   async addDestination(
-    @Request() req,
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() createDestinationDto: CreateDestinationDto,
   ) {
@@ -80,7 +81,7 @@ export class TripController {
   @Delete(':tripId/destinations/:destinationId')
   @ApiOperation({ summary: 'Remove destination from trip' })
   async removeDestination(
-    @Request() req,
+    @Req() req: AuthenticatedRequest,
     @Param('tripId') tripId: string,
     @Param('destinationId') destinationId: string,
   ) {
