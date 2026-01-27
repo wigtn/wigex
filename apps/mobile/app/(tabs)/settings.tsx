@@ -1,7 +1,6 @@
-// Travel Helper v1.1 - Settings Screen
-// PRD v1.1 기준 - 지갑 기능 제거
+// Travel Helper v2.0 - Settings Screen
+// PRD v1.1 기준 - 지갑 기능 제거, 로그아웃 추가
 
-import { useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -18,14 +18,18 @@ import { useTheme } from '../../lib/theme';
 import { useTripStore } from '../../lib/stores/tripStore';
 import { useExchangeRateStore } from '../../lib/stores/exchangeRateStore';
 import { useSettingsStore } from '../../lib/stores/settingsStore';
+import { useAuthStore } from '../../lib/stores/authStore';
+import { useSyncStore } from '../../lib/stores/syncStore';
 import { Card, CurrencyToggle } from '../../components/ui';
 import { formatDisplayDate } from '../../lib/utils/date';
 
 export default function SettingsScreen() {
   const { colors, spacing, typography, isDark } = useTheme();
-  const { trips, activeTrip, destinations } = useTripStore();
+  const { trips, activeTrip } = useTripStore();
   const { lastUpdated, loadRates } = useExchangeRateStore();
   const { hapticEnabled, setHapticEnabled, currencyDisplayMode } = useSettingsStore();
+  const { user, logout, isLoading: isAuthLoading } = useAuthStore();
+  const { status: syncStatus, pendingChanges } = useSyncStore();
 
   const handleRefreshRates = async () => {
     if (hapticEnabled) {
@@ -33,6 +37,51 @@ export default function SettingsScreen() {
     }
     await loadRates();
     Alert.alert('완료', '환율이 업데이트되었습니다');
+  };
+
+  const handleLogout = () => {
+    if (hapticEnabled) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    // 동기화 대기 중인 변경사항이 있으면 경고
+    if (pendingChanges > 0) {
+      Alert.alert(
+        '로그아웃',
+        `동기화되지 않은 변경사항이 ${pendingChanges}개 있습니다.\n로그아웃하면 이 변경사항이 사라질 수 있습니다.\n\n정말 로그아웃하시겠습니까?`,
+        [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '로그아웃',
+            style: 'destructive',
+            onPress: performLogout,
+          },
+        ]
+      );
+    } else {
+      Alert.alert(
+        '로그아웃',
+        '정말 로그아웃하시겠습니까?',
+        [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '로그아웃',
+            style: 'destructive',
+            onPress: performLogout,
+          },
+        ]
+      );
+    }
+  };
+
+  const performLogout = async () => {
+    try {
+      await logout();
+      router.replace('/(auth)/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('오류', '로그아웃 중 오류가 발생했습니다.');
+    }
   };
 
   const formatLastUpdated = () => {
@@ -208,6 +257,63 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
+      {/* 계정 */}
+      <Text style={[typography.labelMedium, { color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm }]}>
+        계정
+      </Text>
+      <Card style={styles.menuCard}>
+        <View style={styles.menuItem}>
+          <View style={styles.menuLeft}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primaryLight }]}>
+              <MaterialIcons name="person" size={20} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.bodyMedium, { color: colors.text }]}>
+                {user?.name || '사용자'}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                {user?.email}
+              </Text>
+            </View>
+            {syncStatus === 'syncing' && (
+              <ActivityIndicator size="small" color={colors.primary} />
+            )}
+            {syncStatus === 'offline' && (
+              <View style={[styles.statusBadge, { backgroundColor: colors.textTertiary }]}>
+                <Text style={styles.statusBadgeText}>오프라인</Text>
+              </View>
+            )}
+            {pendingChanges > 0 && syncStatus !== 'syncing' && (
+              <View style={[styles.statusBadge, { backgroundColor: colors.warning }]}>
+                <Text style={styles.statusBadgeText}>{pendingChanges}개 대기</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={handleLogout}
+          disabled={isAuthLoading}
+        >
+          <View style={styles.menuLeft}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.error + '20' }]}>
+              <MaterialIcons name="logout" size={20} color={colors.error} />
+            </View>
+            <Text style={[typography.bodyMedium, { color: colors.error }]}>
+              로그아웃
+            </Text>
+          </View>
+          {isAuthLoading ? (
+            <ActivityIndicator size="small" color={colors.error} />
+          ) : (
+            <MaterialIcons name="chevron-right" size={24} color={colors.textTertiary} />
+          )}
+        </TouchableOpacity>
+      </Card>
+
       {/* 도움말 */}
       <Card style={[styles.helpCard, { backgroundColor: colors.surface, marginTop: spacing.lg }]}>
         <MaterialIcons name="lightbulb" size={24} color={colors.warning} />
@@ -280,6 +386,16 @@ const styles = StyleSheet.create({
   activeBadgeText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  statusBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
     fontWeight: '600',
   },
   helpCard: {
