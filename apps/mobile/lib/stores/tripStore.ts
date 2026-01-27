@@ -1,10 +1,11 @@
-// Travel Helper v1.1 - Trip Store (Simplified)
-// PRD v1.1 기준 - 지갑 연동 제거
+// Travel Helper v2.0 - Trip Store (API-first with offline support)
 
 import { create } from 'zustand';
 import { generateId } from '../utils/uuid';
 import { Trip, Destination, CurrentLocation } from '../types';
 import * as queries from '../db/queries';
+import { tripApi, CreateTripDto, TripResponse } from '../api/trip';
+import { networkService } from '../services/networkService';
 
 interface TripState {
   trips: Trip[];
@@ -18,18 +19,52 @@ interface TripState {
 
   // 액션들
   loadTrips: () => Promise<void>;
+  loadTripsFromServer: () => Promise<void>;
   loadActiveTrips: () => Promise<void>;
   loadDestinations: (tripId: string) => Promise<void>;
-  createTrip: (trip: Omit<Trip, 'id' | 'createdAt'>, destinations?: Omit<Destination, 'id' | 'tripId' | 'createdAt'>[]) => Promise<Trip>;
+  createTrip: (
+    trip: Omit<Trip, 'id' | 'createdAt'>,
+    destinations?: Omit<Destination, 'id' | 'tripId' | 'createdAt'>[]
+  ) => Promise<Trip>;
   updateTrip: (trip: Trip) => Promise<void>;
   deleteTrip: (id: string) => Promise<void>;
   setActiveTrip: (trip: Trip | null) => void;
 
   // 방문지 액션들
-  addDestination: (destination: Omit<Destination, 'id' | 'createdAt'>) => Promise<Destination>;
+  addDestination: (
+    destination: Omit<Destination, 'id' | 'createdAt'>
+  ) => Promise<Destination>;
   updateDestination: (destination: Destination) => Promise<void>;
-  deleteDestination: (id: string) => Promise<void>;
+  deleteDestination: (id: string, tripId: string) => Promise<void>;
   getCurrentLocation: (tripId: string) => Promise<CurrentLocation>;
+}
+
+// Helper: Convert API response to local Trip type
+function toTrip(response: TripResponse): Trip {
+  return {
+    id: response.id,
+    name: response.name,
+    startDate: response.startDate,
+    endDate: response.endDate,
+    budget: response.budget,
+    createdAt: response.createdAt,
+  };
+}
+
+// Helper: Convert API response destinations to local type
+function toDestination(dest: Destination, tripId: string): Destination {
+  return {
+    id: dest.id,
+    tripId,
+    country: dest.country,
+    countryName: dest.countryName,
+    city: dest.city,
+    currency: dest.currency,
+    startDate: dest.startDate,
+    endDate: dest.endDate,
+    orderIndex: dest.orderIndex,
+    createdAt: dest.createdAt,
+  };
 }
 
 export const useTripStore = create<TripState>((set, get) => ({
@@ -40,6 +75,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   currentDestination: null,
   isLoading: false,
 
+  // Load trips from local DB (fallback)
   loadTrips: async () => {
     set({ isLoading: true });
     try {
@@ -51,6 +87,45 @@ export const useTripStore = create<TripState>((set, get) => ({
     }
   },
 
+  // Load trips from server and save to local DB
+  loadTripsFromServer: async () => {
+    if (!networkService.getIsConnected()) {
+      // Offline - load from local
+      return get().loadTrips();
+    }
+
+    set({ isLoading: true });
+    try {
+      const { data } = await tripApi.getAll();
+      const trips: Trip[] = [];
+
+      // Save to local DB and build trips array
+      for (const tripResponse of data) {
+        const trip = toTrip(tripResponse);
+        trips.push(trip);
+
+        // Upsert trip to local DB
+        await queries.upsertTrip(trip);
+
+        // Upsert destinations
+        if (tripResponse.destinations) {
+          for (const dest of tripResponse.destinations) {
+            await queries.upsertDestination(toDestination(dest, trip.id));
+          }
+        }
+      }
+
+      set({ trips, isLoading: false });
+
+      // Update active trips
+      await get().loadActiveTrips();
+    } catch (error) {
+      console.error('Failed to load trips from server:', error);
+      // Fallback to local
+      await get().loadTrips();
+    }
+  },
+
   loadActiveTrips: async () => {
     try {
       const activeTrips = await queries.getActiveTrips();
@@ -58,7 +133,6 @@ export const useTripStore = create<TripState>((set, get) => ({
 
       set({ activeTrips, activeTrip });
 
-      // 활성 여행이 있으면 방문지도 로드
       if (activeTrip) {
         await get().loadDestinations(activeTrip.id);
       }
@@ -78,46 +152,118 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   createTrip: async (tripData, destinationsData = []) => {
-    const tripId = generateId();
-    const now = new Date().toISOString();
+    const isOnline = networkService.getIsConnected();
 
-    const trip: Trip = {
-      ...tripData,
-      id: tripId,
-      createdAt: now,
-    };
+    if (isOnline) {
+      // Online: Create via API
+      try {
+        const dto: CreateTripDto = {
+          name: tripData.name,
+          startDate: tripData.startDate,
+          endDate: tripData.endDate,
+          budget: tripData.budget,
+          destinations: destinationsData.map((d, i) => ({
+            country: d.country,
+            countryCode: d.countryName,
+            city: d.city,
+            currency: d.currency,
+            startDate: d.startDate,
+            endDate: d.endDate,
+            orderIndex: i,
+          })),
+        };
 
-    await queries.createTrip(trip);
+        const { data } = await tripApi.create(dto);
+        const trip = toTrip(data);
 
-    // 방문지 생성
-    for (let i = 0; i < destinationsData.length; i++) {
-      const dest = destinationsData[i];
-      const destination: Destination = {
-        ...dest,
-        id: generateId(),
-        tripId,
-        orderIndex: i,
+        // Save to local DB
+        await queries.upsertTrip(trip);
+        if (data.destinations) {
+          for (const dest of data.destinations) {
+            await queries.upsertDestination(toDestination(dest, trip.id));
+          }
+        }
+
+        set((state) => ({ trips: [trip, ...state.trips] }));
+
+        // Update active trips if applicable
+        const today = new Date().toISOString().split('T')[0];
+        if (trip.startDate <= today && trip.endDate >= today) {
+          set((state) => ({
+            activeTrip: trip,
+            activeTrips: [trip, ...state.activeTrips],
+          }));
+          await get().loadDestinations(trip.id);
+        }
+
+        return trip;
+      } catch (error) {
+        console.error('Failed to create trip on server:', error);
+        throw error;
+      }
+    } else {
+      // Offline: Create locally with sync queue
+      const tripId = generateId();
+      const now = new Date().toISOString();
+
+      const trip: Trip = {
+        ...tripData,
+        id: tripId,
         createdAt: now,
       };
-      await queries.createDestination(destination);
+
+      await queries.createTrip(trip);
+      await queries.addToSyncQueue('trip', tripId, 'create', trip as unknown as Record<string, unknown>);
+
+      // Create destinations
+      for (let i = 0; i < destinationsData.length; i++) {
+        const dest = destinationsData[i];
+        const destination: Destination = {
+          ...dest,
+          id: generateId(),
+          tripId,
+          orderIndex: i,
+          createdAt: now,
+        };
+        await queries.createDestination(destination);
+        await queries.addToSyncQueue('destination', destination.id, 'create', destination as unknown as Record<string, unknown>);
+      }
+
+      set((state) => ({ trips: [trip, ...state.trips] }));
+
+      const today = new Date().toISOString().split('T')[0];
+      if (trip.startDate <= today && trip.endDate >= today) {
+        set((state) => ({
+          activeTrip: trip,
+          activeTrips: [trip, ...state.activeTrips],
+        }));
+        await get().loadDestinations(tripId);
+      }
+
+      return trip;
     }
-
-    set((state) => ({ trips: [trip, ...state.trips] }));
-
-    // 활성 여행 업데이트
-    const today = new Date().toISOString().split('T')[0];
-    if (trip.startDate <= today && trip.endDate >= today) {
-      set((state) => ({
-        activeTrip: trip,
-        activeTrips: [trip, ...state.activeTrips],
-      }));
-      await get().loadDestinations(tripId);
-    }
-
-    return trip;
   },
 
   updateTrip: async (trip) => {
+    const isOnline = networkService.getIsConnected();
+
+    if (isOnline) {
+      try {
+        await tripApi.update(trip.id, {
+          name: trip.name,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          budget: trip.budget,
+        });
+      } catch (error) {
+        console.error('Failed to update trip on server:', error);
+        // Queue for later sync
+        await queries.addToSyncQueue('trip', trip.id, 'update', trip as unknown as Record<string, unknown>);
+      }
+    } else {
+      await queries.addToSyncQueue('trip', trip.id, 'update', trip as unknown as Record<string, unknown>);
+    }
+
     await queries.updateTrip(trip);
     set((state) => ({
       trips: state.trips.map((t) => (t.id === trip.id ? trip : t)),
@@ -127,19 +273,36 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   deleteTrip: async (id) => {
+    const isOnline = networkService.getIsConnected();
+
+    if (isOnline) {
+      try {
+        await tripApi.delete(id);
+      } catch (error) {
+        console.error('Failed to delete trip on server:', error);
+        await queries.addToSyncQueue('trip', id, 'delete', { id });
+      }
+    } else {
+      await queries.addToSyncQueue('trip', id, 'delete', { id });
+    }
+
     await queries.deleteTrip(id);
     set((state) => {
       const newActiveTrips = state.activeTrips.filter((t) => t.id !== id);
-      const newActiveTrip = state.activeTrip?.id === id
-        ? (newActiveTrips.length > 0 ? newActiveTrips[0] : null)
-        : state.activeTrip;
+      const newActiveTrip =
+        state.activeTrip?.id === id
+          ? newActiveTrips.length > 0
+            ? newActiveTrips[0]
+            : null
+          : state.activeTrip;
 
       return {
         trips: state.trips.filter((t) => t.id !== id),
         activeTrips: newActiveTrips,
         activeTrip: newActiveTrip,
         destinations: state.activeTrip?.id === id ? [] : state.destinations,
-        currentDestination: state.activeTrip?.id === id ? null : state.currentDestination,
+        currentDestination:
+          state.activeTrip?.id === id ? null : state.currentDestination,
       };
     });
   },
@@ -155,43 +318,98 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   // 방문지 관련
   addDestination: async (destData) => {
+    const isOnline = networkService.getIsConnected();
     const destination: Destination = {
       ...destData,
       id: generateId(),
       createdAt: new Date().toISOString(),
     };
+
+    if (isOnline) {
+      try {
+        const { data } = await tripApi.addDestination(destData.tripId, {
+          country: destData.country,
+          countryCode: destData.countryName,
+          city: destData.city,
+          currency: destData.currency,
+          startDate: destData.startDate,
+          endDate: destData.endDate,
+          orderIndex: destData.orderIndex,
+        });
+        // Use server-generated ID
+        destination.id = data.id;
+      } catch (error) {
+        console.error('Failed to add destination on server:', error);
+        await queries.addToSyncQueue('destination', destination.id, 'create', destination as unknown as Record<string, unknown>);
+      }
+    } else {
+      await queries.addToSyncQueue('destination', destination.id, 'create', destination as unknown as Record<string, unknown>);
+    }
+
     await queries.createDestination(destination);
     set((state) => ({
-      destinations: [...state.destinations, destination].sort((a, b) => a.orderIndex - b.orderIndex),
+      destinations: [...state.destinations, destination].sort(
+        (a, b) => a.orderIndex - b.orderIndex
+      ),
     }));
     return destination;
   },
 
   updateDestination: async (destination) => {
+    const isOnline = networkService.getIsConnected();
+
+    if (!isOnline) {
+      await queries.addToSyncQueue('destination', destination.id, 'update', destination as unknown as Record<string, unknown>);
+    }
+    // Note: Backend doesn't have a direct update destination endpoint
+    // Changes will sync via the sync mechanism
+
     await queries.updateDestination(destination);
     set((state) => ({
-      destinations: state.destinations.map((d) => (d.id === destination.id ? destination : d)),
-      currentDestination: state.currentDestination?.id === destination.id ? destination : state.currentDestination,
+      destinations: state.destinations.map((d) =>
+        d.id === destination.id ? destination : d
+      ),
+      currentDestination:
+        state.currentDestination?.id === destination.id
+          ? destination
+          : state.currentDestination,
     }));
   },
 
-  deleteDestination: async (id) => {
+  deleteDestination: async (id, tripId) => {
+    const isOnline = networkService.getIsConnected();
+
+    if (isOnline) {
+      try {
+        await tripApi.removeDestination(tripId, id);
+      } catch (error) {
+        console.error('Failed to delete destination on server:', error);
+        await queries.addToSyncQueue('destination', id, 'delete', { id });
+      }
+    } else {
+      await queries.addToSyncQueue('destination', id, 'delete', { id });
+    }
+
     await queries.deleteDestination(id);
     set((state) => ({
       destinations: state.destinations.filter((d) => d.id !== id),
-      currentDestination: state.currentDestination?.id === id ? null : state.currentDestination,
+      currentDestination:
+        state.currentDestination?.id === id ? null : state.currentDestination,
     }));
   },
 
   getCurrentLocation: async (tripId) => {
     const currentDestination = await queries.getCurrentDestination(tripId);
-    const trip = get().trips.find(t => t.id === tripId) || get().activeTrip;
+    const trip = get().trips.find((t) => t.id === tripId) || get().activeTrip;
 
     let dayIndex = 1;
     if (trip) {
       const start = new Date(trip.startDate);
       const today = new Date();
-      dayIndex = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      dayIndex =
+        Math.floor(
+          (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+        ) + 1;
     }
 
     set({ currentDestination });

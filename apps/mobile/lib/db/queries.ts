@@ -297,3 +297,228 @@ export async function saveExchangeRates(cache: ExchangeRateCache): Promise<void>
     [JSON.stringify(cache.rates), cache.lastUpdated]
   );
 }
+
+// ============ DATA MANAGEMENT ============
+
+// 로그인 시 모든 로컬 데이터 삭제 (서버 데이터만 사용)
+export async function deleteAllLocalData(): Promise<void> {
+  const db = await getDatabase();
+  await db.execAsync(`
+    DELETE FROM sync_queue;
+    DELETE FROM sync_metadata;
+    DELETE FROM expenses;
+    DELETE FROM destinations;
+    DELETE FROM trips;
+  `);
+}
+
+// ============ SYNC QUEUE ============
+
+export interface SyncQueueItem {
+  id: number;
+  entityType: 'trip' | 'destination' | 'expense';
+  entityId: string;
+  action: 'create' | 'update' | 'delete';
+  data: Record<string, unknown>;
+  localUpdatedAt: string;
+  createdAt: string;
+}
+
+export async function addToSyncQueue(
+  entityType: 'trip' | 'destination' | 'expense',
+  entityId: string,
+  action: 'create' | 'update' | 'delete',
+  data: Record<string, unknown>
+): Promise<void> {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO sync_queue (entityType, entityId, action, data, localUpdatedAt, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [entityType, entityId, action, JSON.stringify(data), now, now]
+  );
+}
+
+export async function getSyncQueue(): Promise<SyncQueueItem[]> {
+  const db = await getDatabase();
+  const result = await db.getAllAsync<{
+    id: number;
+    entityType: string;
+    entityId: string;
+    action: string;
+    data: string;
+    localUpdatedAt: string;
+    createdAt: string;
+  }>('SELECT * FROM sync_queue ORDER BY createdAt ASC');
+
+  return result.map((item) => ({
+    id: item.id,
+    entityType: item.entityType as 'trip' | 'destination' | 'expense',
+    entityId: item.entityId,
+    action: item.action as 'create' | 'update' | 'delete',
+    data: JSON.parse(item.data),
+    localUpdatedAt: item.localUpdatedAt,
+    createdAt: item.createdAt,
+  }));
+}
+
+export async function clearSyncQueue(entityIds?: string[]): Promise<void> {
+  const db = await getDatabase();
+  if (entityIds && entityIds.length > 0) {
+    const placeholders = entityIds.map(() => '?').join(',');
+    await db.runAsync(
+      `DELETE FROM sync_queue WHERE entityId IN (${placeholders})`,
+      entityIds
+    );
+  } else {
+    await db.runAsync('DELETE FROM sync_queue');
+  }
+}
+
+export async function getSyncQueueCount(): Promise<number> {
+  const db = await getDatabase();
+  const result = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM sync_queue'
+  );
+  return result?.count ?? 0;
+}
+
+// ============ SYNC METADATA ============
+
+export async function getLastSyncedAt(): Promise<string | null> {
+  const db = await getDatabase();
+  const result = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM sync_metadata WHERE key = 'lastSyncedAt'"
+  );
+  return result?.value || null;
+}
+
+export async function setLastSyncedAt(timestamp: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('lastSyncedAt', ?)`,
+    [timestamp]
+  );
+}
+
+// ============ UPSERT (for sync) ============
+
+export async function upsertTrip(trip: Trip): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO trips (id, name, startDate, endDate, budget, createdAt, syncStatus, serverUpdatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, 'synced', ?)`,
+    [
+      trip.id,
+      trip.name,
+      trip.startDate,
+      trip.endDate,
+      trip.budget ?? null,
+      trip.createdAt,
+      new Date().toISOString(),
+    ]
+  );
+}
+
+export async function upsertDestination(destination: Destination): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO destinations (id, tripId, country, countryName, currency, startDate, endDate, orderIndex, createdAt, syncStatus, serverUpdatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?)`,
+    [
+      destination.id,
+      destination.tripId,
+      destination.country,
+      destination.countryName ?? null,
+      destination.currency,
+      destination.startDate ?? null,
+      destination.endDate ?? null,
+      destination.orderIndex,
+      destination.createdAt,
+      new Date().toISOString(),
+    ]
+  );
+}
+
+export async function upsertExpense(expense: Expense): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO expenses (id, tripId, destinationId, amount, currency, amountKRW, exchangeRate, category, memo, date, createdAt, syncStatus, serverUpdatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?)`,
+    [
+      expense.id,
+      expense.tripId,
+      expense.destinationId ?? null,
+      expense.amount,
+      expense.currency,
+      expense.amountKRW,
+      expense.exchangeRate,
+      expense.category,
+      expense.memo ?? null,
+      expense.date,
+      expense.createdAt,
+      new Date().toISOString(),
+    ]
+  );
+}
+
+// ============ SYNC STATUS UPDATE ============
+
+export type SyncStatus = 'pending' | 'synced' | 'conflict';
+
+export async function updateTripSyncStatus(
+  id: string,
+  syncStatus: SyncStatus,
+  serverUpdatedAt?: string
+): Promise<void> {
+  const db = await getDatabase();
+  if (serverUpdatedAt) {
+    await db.runAsync(
+      'UPDATE trips SET syncStatus = ?, serverUpdatedAt = ? WHERE id = ?',
+      [syncStatus, serverUpdatedAt, id]
+    );
+  } else {
+    await db.runAsync('UPDATE trips SET syncStatus = ? WHERE id = ?', [
+      syncStatus,
+      id,
+    ]);
+  }
+}
+
+export async function updateDestinationSyncStatus(
+  id: string,
+  syncStatus: SyncStatus,
+  serverUpdatedAt?: string
+): Promise<void> {
+  const db = await getDatabase();
+  if (serverUpdatedAt) {
+    await db.runAsync(
+      'UPDATE destinations SET syncStatus = ?, serverUpdatedAt = ? WHERE id = ?',
+      [syncStatus, serverUpdatedAt, id]
+    );
+  } else {
+    await db.runAsync('UPDATE destinations SET syncStatus = ? WHERE id = ?', [
+      syncStatus,
+      id,
+    ]);
+  }
+}
+
+export async function updateExpenseSyncStatus(
+  id: string,
+  syncStatus: SyncStatus,
+  serverUpdatedAt?: string
+): Promise<void> {
+  const db = await getDatabase();
+  if (serverUpdatedAt) {
+    await db.runAsync(
+      'UPDATE expenses SET syncStatus = ?, serverUpdatedAt = ? WHERE id = ?',
+      [syncStatus, serverUpdatedAt, id]
+    );
+  } else {
+    await db.runAsync('UPDATE expenses SET syncStatus = ? WHERE id = ?', [
+      syncStatus,
+      id,
+    ]);
+  }
+}

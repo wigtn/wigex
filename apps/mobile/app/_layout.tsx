@@ -1,38 +1,96 @@
-// Travel Helper v1.1 - Root Layout
+// Travel Helper v2.0 - Root Layout (with Auth & Sync)
 
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../lib/theme';
 import { useExchangeRateStore } from '../lib/stores/exchangeRateStore';
 import { useTripStore } from '../lib/stores/tripStore';
 import { useExpenseStore } from '../lib/stores/expenseStore';
+import { useAuthStore } from '../lib/stores/authStore';
+import { useSyncStore } from '../lib/stores/syncStore';
+
+function SplashScreen() {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.splash, { backgroundColor: colors.background }]}>
+      <ActivityIndicator size="large" color={colors.primary} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});
 
 export default function RootLayout() {
   const { colors, isDark } = useTheme();
+  const router = useRouter();
+  const segments = useSegments();
+
+  // Auth state
+  const { isAuthenticated, isInitialized, initialize: initAuth } = useAuthStore();
+
+  // Sync state
+  const { initialize: initSync, sync } = useSyncStore();
+
+  // Data stores
   const loadRates = useExchangeRateStore((state) => state.loadRates);
-  const loadTrips = useTripStore((state) => state.loadTrips);
-  const loadActiveTrips = useTripStore((state) => state.loadActiveTrips);
+  const loadTripsFromServer = useTripStore((state) => state.loadTripsFromServer);
   const activeTrip = useTripStore((state) => state.activeTrip);
-  const loadExpenses = useExpenseStore((state) => state.loadExpenses);
+  const loadExpensesFromServer = useExpenseStore((state) => state.loadExpensesFromServer);
 
+  // Initialize auth on app start
   useEffect(() => {
-    const initApp = async () => {
-      // 앱 시작 시 데이터 로드
-      await loadRates();
-      await loadTrips();
-      await loadActiveTrips();
-    };
-
-    initApp();
+    initAuth();
   }, []);
 
-  // 활성 여행이 변경되면 지출 로드
+  // Handle auth-based routing
   useEffect(() => {
-    if (activeTrip) {
-      loadExpenses(activeTrip.id);
+    if (!isInitialized) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      // Not logged in, redirect to login
+      router.replace('/(auth)/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      // Logged in but on auth screen, redirect to main app
+      router.replace('/(tabs)');
     }
-  }, [activeTrip?.id]);
+  }, [isAuthenticated, isInitialized, segments]);
+
+  // Initialize data when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const initData = async () => {
+        // Initialize sync
+        await initSync();
+        // Load exchange rates
+        await loadRates();
+        // Load trips from server (will fallback to local if offline)
+        await loadTripsFromServer();
+      };
+      initData();
+    }
+  }, [isAuthenticated]);
+
+  // Load expenses when active trip changes
+  useEffect(() => {
+    if (activeTrip && isAuthenticated) {
+      loadExpensesFromServer(activeTrip.id);
+    }
+  }, [activeTrip?.id, isAuthenticated]);
+
+  // Show splash while initializing
+  if (!isInitialized) {
+    return <SplashScreen />;
+  }
 
   return (
     <>
@@ -51,6 +109,7 @@ export default function RootLayout() {
           },
         }}
       >
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="trip/new"
