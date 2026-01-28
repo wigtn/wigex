@@ -46,5 +46,5 @@ COPY --from=builder /app/node_modules/.pnpm ./node_modules/.pnpm
 # Expose port
 EXPOSE 3000
 
-# Start server (migration handled separately)
-CMD ["node", "dist/main"]
+# Run migrations and start server
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
