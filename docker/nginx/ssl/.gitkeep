@@ -1,0 +1,2 @@
+# SSL certificates will be placed here by Certbot
+# Do not commit actual certificates to git

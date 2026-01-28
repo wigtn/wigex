@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Travel Helper SQS Queues'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+    Description: Environment name
+
+Resources:
+  # Dead Letter Queue
+  TravelHelperDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'travel-helper-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      VisibilityTimeout: 300  # 5 minutes
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: travel-helper
+
+  # Main Processing Queue
+  TravelHelperQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'travel-helper-queue-${Environment}'
+      MessageRetentionPeriod: 345600  # 4 days
+      VisibilityTimeout: 120  # 2 minutes (for AI processing)
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TravelHelperDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: travel-helper
+
+  # IAM Policy for application to access queues
+  TravelHelperSQSPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'travel-helper-sqs-policy-${Environment}'
+      Description: 'Policy for Travel Helper to access SQS queues'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+            Resource:
+              - !GetAtt TravelHelperQueue.Arn
+              - !GetAtt TravelHelperDLQ.Arn
+
+Outputs:
+  QueueUrl:
+    Description: 'Main Queue URL'
+    Value: !Ref TravelHelperQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-QueueUrl'
+
+  QueueArn:
+    Description: 'Main Queue ARN'
+    Value: !GetAtt TravelHelperQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-QueueArn'
+
+  DLQUrl:
+    Description: 'Dead Letter Queue URL'
+    Value: !Ref TravelHelperDLQ
+    Export:
+      Name: !Sub '${AWS::StackName}-DLQUrl'
+
+  DLQArn:
+    Description: 'Dead Letter Queue ARN'
+    Value: !GetAtt TravelHelperDLQ.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DLQArn'
+
+  SQSPolicyArn:
+    Description: 'SQS Policy ARN'
+    Value: !Ref TravelHelperSQSPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-SQSPolicyArn'

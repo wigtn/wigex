@@ -4,6 +4,7 @@ Travel Helper AI Service
 - Chatbot using LLM
 """
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -45,10 +46,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# CORS - Environment-aware configuration
+cors_origins_env = os.getenv("CORS_ORIGIN", "*")
+cors_origins = cors_origins_env.split(",") if cors_origins_env != "*" else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

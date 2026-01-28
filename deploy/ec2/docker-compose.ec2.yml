@@ -1,0 +1,164 @@
+# ===========================================
+# Travel Helper - AWS EC2 Docker Compose
+# ===========================================
+# 개발/프로덕션 공용 (환경변수로 구분)
+# Usage: docker compose -f docker-compose.ec2.yml up -d
+
+services:
+  # Nginx Reverse Proxy with SSL
+  nginx:
+    image: nginx:alpine
+    container_name: travel-helper-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/nginx/ssl:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - api
+      - admin
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # Certbot for SSL renewal
+  certbot:
+    image: certbot/certbot
+    container_name: travel-helper-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - app-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: travel-helper-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-travel_helper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-travel_helper}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-travel_helper}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # NestJS API
+  api:
+    image: ${REGISTRY:-ghcr.io/your-org/travel-helper}/api:${IMAGE_TAG:-latest}
+    container_name: travel-helper-api
+    restart: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-travel_helper}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-travel_helper}
+      DIRECT_URL: postgresql://${POSTGRES_USER:-travel_helper}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-travel_helper}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      AI_PROVIDER: ${AI_PROVIDER:-groq}
+      AI_SERVICE_URL: http://ai-service:8000
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CORS_ORIGIN: https://admin.${DOMAIN},https://${DOMAIN}
+      EXCHANGE_RATE_API_URL: https://api.exchangerate-api.com/v4/latest
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # AWS
+      QUEUE_PROVIDER: sqs
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_SQS_QUEUE_URL: ${AWS_SQS_QUEUE_URL}
+      AWS_SQS_DLQ_URL: ${AWS_SQS_DLQ_URL:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # Python AI Service
+  ai-service:
+    image: ${REGISTRY:-ghcr.io/your-org/travel-helper}/ai-service:${IMAGE_TAG:-latest}
+    container_name: travel-helper-ai
+    restart: always
+    environment:
+      SKIP_MODEL_LOADING: "true"
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CORS_ORIGIN: http://api:3000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Next.js Admin Dashboard
+  admin:
+    image: ${REGISTRY:-ghcr.io/your-org/travel-helper}/admin:${IMAGE_TAG:-latest}
+    container_name: travel-helper-admin
+    restart: always
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: https://api.${DOMAIN}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

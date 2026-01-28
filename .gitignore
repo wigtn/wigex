@@ -55,8 +55,13 @@ Thumbs.db
 # Environment
 .env
 .env.local
+.env.development
+.env.production
 .env.*.local
 !.env.example
+!.env.local.example
+!.env.development.example
+!.env.production.example
 
 # TypeScript
 *.tsbuildinfo

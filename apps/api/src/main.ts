@@ -9,10 +9,13 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix('api');
 
-  // CORS
+  // CORS - Environment-aware configuration
+  const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim());
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') || '*',
+    origin: corsOrigins || (process.env.NODE_ENV === 'production' ? false : '*'),
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
 
   // Validation pipe

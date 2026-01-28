@@ -14,6 +14,8 @@ import { WalletModule } from './modules/wallet/wallet.module';
 import { ExchangeRateModule } from './modules/exchange-rate/exchange-rate.module';
 import { AIModule } from './modules/ai/ai.module';
 import { SyncModule } from './modules/sync/sync.module';
+import { HealthModule } from './modules/health/health.module';
+import { QueueModule } from './modules/queue/queue.module';
 
 // Config
 import configuration from './config/configuration';
@@ -37,7 +39,11 @@ import configuration from './config/configuration';
     // Database
     DatabaseModule,
 
+    // Core modules
+    QueueModule,
+
     // Feature modules
+    HealthModule,
     AuthModule,
     UserModule,
     TripModule,
