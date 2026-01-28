@@ -1,45 +1,47 @@
 # Travel Helper API Dockerfile
+# Build from monorepo root: docker build -f apps/api/Dockerfile .
 
-# Build stage
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9
 
-# Copy package files
-COPY package.json pnpm-lock.yaml* ./
-COPY prisma ./prisma/
+# Copy workspace files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY packages/shared/package.json ./packages/shared/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
-# Generate Prisma client
-RUN pnpm prisma:generate
-
 # Copy source code
-COPY . .
+COPY apps/api ./apps/api
+COPY packages/shared ./packages/shared
+
+# Generate Prisma client
+RUN cd apps/api && pnpm prisma generate
 
 # Build
-RUN pnpm build
+RUN pnpm --filter @wigtn/api build
 
 # Production stage
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm
+ENV NODE_ENV=production
 
 # Copy built files
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/apps/api/dist ./dist
+COPY --from=builder /app/apps/api/node_modules ./node_modules
+COPY --from=builder /app/apps/api/package.json ./
+COPY --from=builder /app/apps/api/prisma ./prisma
+COPY --from=builder /app/node_modules/.pnpm ./node_modules/.pnpm
 
 # Expose port
 EXPOSE 3000
 
-# Run migrations and start server
-CMD ["sh", "-c", "pnpm prisma:migrate deploy && node dist/main"]
+# Start server (migration handled separately)
+CMD ["node", "dist/main"]
