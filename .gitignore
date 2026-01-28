@@ -58,6 +58,7 @@ Thumbs.db
 .env.dev
 .env.prod
 .env.*.local
+!.env.example
 !.env.local.example
 !.env.dev.example
 !.env.prod.example
