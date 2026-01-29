@@ -1,6 +1,14 @@
-# Travel Helper
+<div align="center">
 
-해외 여행 중 지출을 쉽게 기록하고 관리하는 모바일 앱입니다.
+# WIGEX (위젝스)
+
+**WIGTN Expense** - 해외 여행 중 지출을 쉽게 기록하고 관리하는 모바일 앱입니다.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+</div>
+
+---
 
 ## 주요 기능
 
@@ -23,6 +31,8 @@
 - 월별 지출 현황 한눈에 보기
 - 날짜 클릭 시 상세 내역 확인
 
+---
+
 ## 기술 스택
 
 | 구분 | 기술 |
@@ -32,6 +42,8 @@
 | State | Zustand |
 | Database | SQLite (expo-sqlite) |
 | UI | React Native Chart Kit, Expo Vector Icons |
+
+---
 
 ## 시작하기
 
@@ -43,6 +55,10 @@
 ### 설치
 
 ```bash
+# 저장소 클론
+git clone https://github.com/wigtn/wigex.git
+cd wigex
+
 # 의존성 설치
 npm install
 
@@ -63,10 +79,12 @@ npm run android
 npm run web
 ```
 
+---
+
 ## 프로젝트 구조
 
 ```
-travel-helper/
+wigex/
 ├── app/                    # 페이지 및 라우트
 │   ├── (tabs)/            # 탭 네비게이션
 │   │   ├── index.tsx      # 홈
@@ -85,6 +103,8 @@ travel-helper/
 └── assets/               # 이미지, 폰트
 ```
 
+---
+
 ## 주요 특징
 
 - **오프라인 지원**: SQLite 로컬 저장 + 환율 캐싱
@@ -92,6 +112,10 @@ travel-helper/
 - **햅틱 피드백**: 터치 반응성 향상
 - **실시간 환전**: 금액 입력 시 즉시 원화 환산
 
+---
+
 ## 라이선스
 
 MIT License
+
+Copyright (c) 2026 WIGTN Crew
