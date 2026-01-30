@@ -9,6 +9,7 @@ import { useTripStore } from '../../lib/stores/tripStore';
 import { useExpenseStore } from '../../lib/stores/expenseStore';
 import { useSettingsStore } from '../../lib/stores/settingsStore';
 import { Card, ProgressBar, CategoryIcon, EmptyState, CurrencyToggle, StatsScreenSkeleton } from '../../components/ui';
+import { DonutChart, TimeSeriesChart } from '../../components/charts';
 import { formatKRW, formatCurrency, getCurrencyFlag } from '../../lib/utils/currency';
 import { getCountryFlag } from '../../lib/utils/constants';
 import { CATEGORIES, Category } from '../../lib/utils/constants';
@@ -150,6 +151,25 @@ export default function StatsScreen() {
       .sort((a, b) => b.amountKRW - a.amountKRW);
   }, [stats, expenses, mainCurrency]);
 
+  // 도넛 차트 데이터
+  const donutChartData = useMemo(() => {
+    return sortedCategories.map((cat) => ({
+      category: cat.id,
+      label: cat.label,
+      amount: cat.amountKRW,
+      percentage: cat.percentage,
+      color: isDark ? cat.darkColor : cat.lightColor,
+    }));
+  }, [sortedCategories, isDark]);
+
+  // 시계열 차트 데이터
+  const timeSeriesData = useMemo(() => {
+    if (!stats) return [];
+    return Object.entries(stats.byDate)
+      .map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [stats]);
+
   const tabs: { id: TabType; label: string; icon: string }[] = [
     { id: 'category', label: '카테고리', icon: 'category' },
     { id: 'currency', label: '통화', icon: 'attach-money' },
@@ -290,6 +310,29 @@ export default function StatsScreen() {
           </Card>
         )}
       </View>
+
+      {/* 도넛 차트 - 카테고리별 지출 */}
+      {donutChartData.length > 0 && (
+        <Card style={{ marginTop: spacing.md }}>
+          <Text style={[typography.titleSmall, { color: colors.text, marginBottom: spacing.sm }]}>
+            카테고리별 지출
+          </Text>
+          <DonutChart
+            data={donutChartData}
+            totalAmount={stats.totalKRW}
+          />
+        </Card>
+      )}
+
+      {/* 시계열 차트 - 일별 지출 추이 */}
+      {timeSeriesData.length > 0 && (
+        <Card style={{ marginTop: spacing.md }}>
+          <Text style={[typography.titleSmall, { color: colors.text, marginBottom: spacing.sm }]}>
+            일별 지출 추이
+          </Text>
+          <TimeSeriesChart data={timeSeriesData} />
+        </Card>
+      )}
 
       {/* 탭 */}
       <View style={[styles.tabContainer, { marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: borderRadius.lg }]}>
