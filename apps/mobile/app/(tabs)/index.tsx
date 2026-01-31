@@ -2,7 +2,7 @@
 // PRD FR-101~FR-109: 지도 + 여행 리스트 + 자동 전환
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../../lib/theme';
@@ -220,7 +220,7 @@ export default function GlobalHomeScreen() {
                 {categorizedTrips.past.length > 5 && (
                   <TouchableOpacity
                     style={[styles.showMoreButton, { borderColor: colors.border }]}
-                    onPress={() => {/* TODO: 전체 여행 목록 화면 */}}
+                    onPress={() => Alert.alert('준비 중', '전체 여행 목록 기능은 곧 추가될 예정입니다.')}
                     accessibilityLabel={`과거 여행 ${categorizedTrips.past.length - 5}개 더보기`}
                     accessibilityRole="button"
                   >

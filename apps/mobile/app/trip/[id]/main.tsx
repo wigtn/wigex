@@ -33,7 +33,7 @@ export default function TripMainScreen() {
   const insets = useSafeAreaInsets();
   const { colors, spacing, typography, borderRadius, shadows } = useTheme();
   const { trips, destinations, loadDestinations, setActiveTrip } = useTripStore();
-  const { expenses, loadExpenses, getStats } = useExpenseStore();
+  const { expenses, loadExpenses, getStats, getTotalLocal } = useExpenseStore();
   const { hapticEnabled, currencyDisplayMode } = useSettingsStore();
   const showInKRW = currencyDisplayMode === 'krw';
 
@@ -68,17 +68,10 @@ export default function TripMainScreen() {
     return expenses.filter((e) => e.date === selectedDate);
   }, [expenses, selectedDate]);
 
-  // 현지통화별 총 지출 합계 (BudgetSummaryCard용)
+  // 현지통화별 총 지출 합계 (BudgetSummaryCard용) - 스토어 메서드 활용
   const totalSpentLocal = useMemo(() => {
-    const localAmounts: Record<string, number> = {};
-    for (const expense of expenses) {
-      localAmounts[expense.currency] = (localAmounts[expense.currency] || 0) + expense.amount;
-    }
-    // 금액이 큰 순서대로 정렬
-    return Object.entries(localAmounts)
-      .map(([currency, amount]) => ({ currency, amount }))
-      .sort((a, b) => b.amount - a.amount);
-  }, [expenses]);
+    return id ? getTotalLocal(id) : [];
+  }, [id, getTotalLocal, expenses]);
 
   // Current destination
   const currentDestination = useMemo(() => {

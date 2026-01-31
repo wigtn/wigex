@@ -1,10 +1,46 @@
+/**
+ * 날짜를 YYYY-MM-DD 형식의 문자열로 변환 (로컬 타임존 기준)
+ */
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
-  // 로컬 타임존 기준으로 YYYY-MM-DD 형식 반환
   const year = d.getFullYear();
   const month = (d.getMonth() + 1).toString().padStart(2, '0');
   const day = d.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * 서버에서 받은 ISO 날짜 문자열을 YYYY-MM-DD 형식으로 변환
+ * @param isoDateString - ISO 형식의 날짜 문자열 (예: "2024-01-15T00:00:00.000Z")
+ * @param fallback - 파싱 실패 시 반환할 기본값
+ */
+export function parseServerDate(isoDateString: string | undefined | null, fallback?: string): string {
+  if (!isoDateString) return fallback || '';
+  try {
+    const d = new Date(isoDateString);
+    if (isNaN(d.getTime())) return fallback || isoDateString;
+    return formatDate(d);
+  } catch {
+    return fallback || isoDateString;
+  }
+}
+
+/**
+ * 서버에서 받은 ISO 시간 문자열을 HH:mm 형식으로 변환
+ * @param isoTimeString - ISO 형식의 시간 문자열 (예: "2024-01-15T14:30:00.000Z")
+ * @param fallback - 파싱 실패 시 반환할 기본값
+ */
+export function parseServerTime(isoTimeString: string | undefined | null, fallback?: string): string {
+  if (!isoTimeString) return fallback || '';
+  try {
+    const t = new Date(isoTimeString);
+    if (isNaN(t.getTime())) return fallback || isoTimeString;
+    const hours = t.getHours().toString().padStart(2, '0');
+    const minutes = t.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  } catch {
+    return fallback || isoTimeString;
+  }
 }
 
 export function formatDisplayDate(date: Date | string): string {

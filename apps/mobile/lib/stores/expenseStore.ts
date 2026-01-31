@@ -3,11 +3,19 @@
 import { create } from 'zustand';
 import { Expense, ExpenseStats, Destination, DayExpenseGroup } from '../types';
 import { Category } from '../utils/constants';
-import { expenseApi, CreateExpenseDto } from '../api/expense';
+import { expenseApi, CreateExpenseDto, ExpenseResponse } from '../api/expense';
+import { parseServerDate, parseServerTime, formatDate } from '../utils/date';
+
+// 현지통화별 합계 타입
+export interface LocalAmountItem {
+  currency: string;
+  amount: number;
+}
 
 interface ExpenseState {
   expenses: Expense[];
   isLoading: boolean;
+  isInitialized: boolean;
   error: string | null;
 
   // 액션들
@@ -22,6 +30,7 @@ interface ExpenseState {
   getStats: (tripId: string) => ExpenseStats;
   getTotalByTrip: (tripId: string) => number;
   getTodayTotal: (tripId: string) => { totalKRW: number; byCurrency: Record<string, number> };
+  getTotalLocal: (tripId: string) => LocalAmountItem[];
 
   // 다중 국가 레이어 (FR-008)
   getExpensesByDateGrouped: (
@@ -31,53 +40,42 @@ interface ExpenseState {
   ) => DayExpenseGroup[];
 }
 
+/**
+ * 서버 응답을 클라이언트 Expense 타입으로 변환
+ */
+function toExpense(e: ExpenseResponse, fallbackDate?: string, fallbackTime?: string): Expense {
+  return {
+    id: e.id,
+    tripId: e.tripId,
+    destinationId: e.destinationId,
+    amount: Number(e.amount),
+    currency: e.currency,
+    amountKRW: Number(e.amountKRW),
+    exchangeRate: Number(e.exchangeRate),
+    category: e.category,
+    memo: e.memo,
+    date: parseServerDate(e.expenseDate, fallbackDate),
+    time: parseServerTime(e.expenseTime, fallbackTime),
+    createdAt: e.createdAt,
+  };
+}
+
 export const useExpenseStore = create<ExpenseState>((set, get) => ({
   expenses: [],
   isLoading: false,
+  isInitialized: false,
   error: null,
 
   loadExpenses: async (tripId) => {
     set({ isLoading: true, error: null });
     try {
       const { data } = await expenseApi.getByTrip(tripId);
-
-      // Convert server response to local type
-      const expenses: Expense[] = data.map((e: any) => {
-        // 날짜 파싱 - 로컬 타임존 기준
-        let dateStr = e.date;
-        if (e.expenseDate) {
-          const d = new Date(e.expenseDate);
-          dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        }
-
-        // 시간 파싱
-        let timeStr = e.time;
-        if (e.expenseTime) {
-          const t = new Date(e.expenseTime);
-          timeStr = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-        }
-
-        return {
-          id: e.id,
-          tripId: e.tripId,
-          destinationId: e.destinationId,
-          amount: Number(e.amount),
-          currency: e.currency,
-          amountKRW: Number(e.amountKRW),
-          exchangeRate: Number(e.exchangeRate),
-          category: e.category,
-          memo: e.memo,
-          date: dateStr,
-          time: timeStr,
-          createdAt: e.createdAt,
-        };
-      });
-
-      set({ expenses, isLoading: false });
+      const expenses: Expense[] = data.map((e) => toExpense(e));
+      set({ expenses, isLoading: false, isInitialized: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : '지출 내역을 불러오는데 실패했습니다';
-      console.error('Failed to load expenses:', error);
-      set({ isLoading: false, error: message });
+      set({ isLoading: false, isInitialized: true, error: message });
+      throw error;
     }
   },
 
@@ -95,34 +93,7 @@ export const useExpenseStore = create<ExpenseState>((set, get) => ({
     };
 
     const { data } = await expenseApi.create(expenseData.tripId, dto);
-
-    // 날짜/시간 파싱
-    let dateStr = expenseData.date;
-    if (data.expenseDate) {
-      const d = new Date(data.expenseDate);
-      dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-
-    let timeStr = expenseData.time;
-    if (data.expenseTime) {
-      const t = new Date(data.expenseTime);
-      timeStr = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-    }
-
-    const expense: Expense = {
-      id: data.id,
-      tripId: expenseData.tripId,
-      destinationId: expenseData.destinationId,
-      amount: Number(data.amount),
-      currency: data.currency,
-      amountKRW: Number(data.amountKRW),
-      exchangeRate: Number(data.exchangeRate),
-      category: data.category,
-      memo: data.memo,
-      date: dateStr,
-      time: timeStr,
-      createdAt: data.createdAt,
-    };
+    const expense = toExpense(data, expenseData.date, expenseData.time);
 
     set((state) => ({ expenses: [expense, ...state.expenses] }));
     return expense;
@@ -209,9 +180,7 @@ export const useExpenseStore = create<ExpenseState>((set, get) => ({
   },
 
   getTodayTotal: (tripId) => {
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
+    const todayStr = formatDate(new Date());
     const todayExpenses = get().expenses.filter(
       (e) => e.tripId === tripId && e.date === todayStr
     );
@@ -225,6 +194,19 @@ export const useExpenseStore = create<ExpenseState>((set, get) => ({
     }
 
     return { totalKRW, byCurrency };
+  },
+
+  getTotalLocal: (tripId) => {
+    const tripExpenses = get().expenses.filter((e) => e.tripId === tripId);
+    const localAmounts: Record<string, number> = {};
+
+    for (const expense of tripExpenses) {
+      localAmounts[expense.currency] = (localAmounts[expense.currency] || 0) + expense.amount;
+    }
+
+    return Object.entries(localAmounts)
+      .map(([currency, amount]) => ({ currency, amount }))
+      .sort((a, b) => b.amount - a.amount);
   },
 
   // PRD FR-008: 특정 날짜의 지출을 국가별로 그룹화

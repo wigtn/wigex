@@ -51,28 +51,33 @@ export const POPULAR_COUNTRIES: { code: string; country: string; flag: string; c
   { code: 'HK', country: '홍콩', flag: '🇭🇰', currency: 'HKD' },
 ];
 
-// 통화 코드로 정보 찾기
+// 캐시된 Map (O(1) 조회를 위한 최적화)
+const currencyMap = new Map(CURRENCIES.map(c => [c.code, c]));
+const categoryMap = new Map(CATEGORIES.map(c => [c.id, c]));
+const countryByNameMap = new Map(POPULAR_COUNTRIES.map(c => [c.country, c]));
+const currencyByCountryMap = new Map(CURRENCIES.map(c => [c.country, c]));
+
+// 통화 코드로 정보 찾기 - O(1)
 export function getCurrencyInfo(code: string) {
-  return CURRENCIES.find(c => c.code === code);
+  return currencyMap.get(code);
 }
 
-// 국가명으로 ISO 코드 찾기
+// 국가명으로 ISO 코드 찾기 - O(1)
 export function getCountryCode(countryName: string): string {
-  const found = POPULAR_COUNTRIES.find(c => c.country === countryName);
-  return found?.code || 'XX';
+  return countryByNameMap.get(countryName)?.code || 'XX';
 }
 
-// 카테고리 정보 찾기
+// 카테고리 정보 찾기 - O(1)
 export function getCategoryInfo(id: Category) {
-  return CATEGORIES.find(c => c.id === id);
+  return categoryMap.get(id);
 }
 
-// 국가명으로 국기 찾기 (통화가 아닌 국가 기반)
+// 국가명으로 국기 찾기 (통화가 아닌 국가 기반) - O(1)
 export function getCountryFlag(countryName: string): string {
-  const found = POPULAR_COUNTRIES.find(c => c.country === countryName);
-  if (found) return found.flag;
+  const country = countryByNameMap.get(countryName);
+  if (country) return country.flag;
 
   // POPULAR_COUNTRIES에 없으면 통화 기반으로 fallback
-  const currency = CURRENCIES.find(c => c.country === countryName);
+  const currency = currencyByCountryMap.get(countryName);
   return currency?.flag || '🌍';
 }

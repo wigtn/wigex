@@ -4,13 +4,14 @@ import { create } from 'zustand';
 import { getCountryCode } from '../utils/constants';
 import { Trip, Destination, CurrentLocation } from '../types';
 import { tripApi, CreateTripDto, TripResponse } from '../api/trip';
+import { formatDate, parseServerDate } from '../utils/date';
 
 interface TripState {
   trips: Trip[];
   activeTrip: Trip | null;
   activeTrips: Trip[];
   isLoading: boolean;
-  isInitialized: boolean; // 초기 데이터 로딩 완료 여부
+  isInitialized: boolean;
   error: string | null;
   hasAutoNavigatedToTrip: boolean;
 
@@ -43,11 +44,17 @@ interface TripState {
   setHasAutoNavigatedToTrip: (value: boolean) => void;
 }
 
-// Helper: Convert date to YYYY-MM-DD format (로컬 타임존 기준)
-function toDateString(date: string | Date): string {
-  if (!date) return '';
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// 서버 방문지 응답 타입
+interface DestinationResponse {
+  id: string;
+  country: string;
+  countryName?: string;
+  city?: string;
+  currency: string;
+  startDate?: string;
+  endDate?: string;
+  orderIndex: number;
+  createdAt: string;
 }
 
 // Helper: Convert API response to local Trip type
@@ -55,15 +62,15 @@ function toTrip(response: TripResponse): Trip {
   return {
     id: response.id,
     name: response.name,
-    startDate: toDateString(response.startDate),
-    endDate: toDateString(response.endDate),
+    startDate: parseServerDate(response.startDate, response.startDate),
+    endDate: parseServerDate(response.endDate, response.endDate),
     budget: response.budget,
     createdAt: response.createdAt,
   };
 }
 
 // Helper: Convert API response destinations to local type
-function toDestination(dest: any, tripId: string): Destination {
+function toDestination(dest: DestinationResponse, tripId: string): Destination {
   return {
     id: dest.id,
     tripId,
@@ -71,8 +78,8 @@ function toDestination(dest: any, tripId: string): Destination {
     countryName: dest.countryName,
     city: dest.city,
     currency: dest.currency,
-    startDate: dest.startDate ? toDateString(dest.startDate) : undefined,
-    endDate: dest.endDate ? toDateString(dest.endDate) : undefined,
+    startDate: dest.startDate ? parseServerDate(dest.startDate) : undefined,
+    endDate: dest.endDate ? parseServerDate(dest.endDate) : undefined,
     orderIndex: dest.orderIndex,
     createdAt: dest.createdAt,
   };
@@ -80,7 +87,7 @@ function toDestination(dest: any, tripId: string): Destination {
 
 // Helper: Get active trips from trips array
 function filterActiveTrips(trips: Trip[]): Trip[] {
-  const today = toDateString(new Date());
+  const today = formatDate(new Date());
   return trips.filter((t) => t.startDate <= today && t.endDate >= today);
 }
 
@@ -128,7 +135,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       // Set current destination if active trip exists
       if (activeTrip) {
         const tripDestinations = allDestinations.filter(d => d.tripId === activeTrip.id);
-        const today = toDateString(new Date());
+        const today = formatDate(new Date());
         const currentDest = tripDestinations.find(
           d => d.startDate && d.endDate && d.startDate <= today && d.endDate >= today
         ) || tripDestinations[0] || null;
@@ -137,6 +144,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     } catch (error) {
       const message = error instanceof Error ? error.message : '여행 목록을 불러오는데 실패했습니다';
       set({ isLoading: false, isInitialized: true, error: message });
+      throw error;
     }
   },
 
@@ -144,10 +152,10 @@ export const useTripStore = create<TripState>((set, get) => ({
     try {
       const { data } = await tripApi.getById(tripId);
       if (data.destinations) {
-        const destinations = data.destinations.map((d: any) => toDestination(d, tripId));
-        const today = toDateString(new Date());
+        const destinations = data.destinations.map((d) => toDestination(d as DestinationResponse, tripId));
+        const today = formatDate(new Date());
         const currentDest = destinations.find(
-          (d: Destination) => d.startDate && d.endDate && d.startDate <= today && d.endDate >= today
+          (d) => d.startDate && d.endDate && d.startDate <= today && d.endDate >= today
         ) || destinations[0] || null;
 
         set((state) => ({
@@ -159,7 +167,9 @@ export const useTripStore = create<TripState>((set, get) => ({
         }));
       }
     } catch (error) {
-      console.error('Failed to load destinations:', error);
+      const message = error instanceof Error ? error.message : '방문지 정보를 불러오는데 실패했습니다';
+      set({ error: message });
+      throw error;
     }
   },
 
@@ -202,7 +212,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     }));
 
     // Update active trips if applicable
-    const today = toDateString(new Date());
+    const today = formatDate(new Date());
     if (trip.startDate <= today && trip.endDate >= today) {
       set((state) => ({
         activeTrip: trip,
@@ -257,7 +267,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     if (trip) {
       // Set current destination from existing destinations
       const tripDestinations = get().destinations.filter(d => d.tripId === trip.id);
-      const today = toDateString(new Date());
+      const today = formatDate(new Date());
       const currentDest = tripDestinations.find(
         d => d.startDate && d.endDate && d.startDate <= today && d.endDate >= today
       ) || tripDestinations[0] || null;
@@ -318,7 +328,7 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   getCurrentLocation: (tripId) => {
     const destinations = get().destinations.filter(d => d.tripId === tripId);
-    const today = toDateString(new Date());
+    const today = formatDate(new Date());
     const currentDest = destinations.find(
       d => d.startDate && d.endDate && d.startDate <= today && d.endDate >= today
     ) || destinations[0] || null;

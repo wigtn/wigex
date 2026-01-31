@@ -20,3 +20,15 @@ export const FAB_CONSTANTS = {
   BOTTOM_POSITION: 24,
   RIGHT_POSITION: 16,
 } as const;
+
+// 헤더 버튼 스타일 (공통)
+export const HEADER_BUTTON = {
+  SIZE: 44,
+  HIT_SLOP: { top: 10, bottom: 10, left: 10, right: 10 },
+} as const;
+
+// 애니메이션 상수
+export const ANIMATION = {
+  SPRING_TENSION: 100,
+  SPRING_FRICTION: 10,
+} as const;
