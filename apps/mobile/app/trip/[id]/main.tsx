@@ -68,6 +68,18 @@ export default function TripMainScreen() {
     return expenses.filter((e) => e.date === selectedDate);
   }, [expenses, selectedDate]);
 
+  // 현지통화별 총 지출 합계 (BudgetSummaryCard용)
+  const totalSpentLocal = useMemo(() => {
+    const localAmounts: Record<string, number> = {};
+    for (const expense of expenses) {
+      localAmounts[expense.currency] = (localAmounts[expense.currency] || 0) + expense.amount;
+    }
+    // 금액이 큰 순서대로 정렬
+    return Object.entries(localAmounts)
+      .map(([currency, amount]) => ({ currency, amount }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [expenses]);
+
   // Current destination
   const currentDestination = useMemo(() => {
     if (tripDestinations.length === 0) return null;
@@ -221,21 +233,26 @@ export default function TripMainScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* 커스텀 헤더 */}
       <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          onPress={handleBack}
-          style={styles.headerButton}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel="뒤로가기"
-        >
-          <MaterialIcons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
+        {/* 왼쪽 버튼 */}
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            onPress={handleBack}
+            style={styles.headerButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="뒤로가기"
+          >
+            <MaterialIcons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+        </View>
 
-        <View style={styles.headerCenter}>
+        {/* 제목 - 절대 위치로 진정한 가운데 정렬 */}
+        <View style={styles.headerCenter} pointerEvents="none">
           <Text style={[typography.titleMedium, { color: colors.text }]} numberOfLines={1}>
             {trip.name}
           </Text>
         </View>
 
+        {/* 오른쪽 버튼들 */}
         <View style={[styles.headerRight, { gap: spacing.xs }]}>
           <CurrencyToggle variant="compact" />
           <TouchableOpacity
@@ -294,6 +311,8 @@ export default function TripMainScreen() {
           <BudgetSummaryCard
             budget={trip.budget}
             totalSpent={stats?.totalKRW || 0}
+            totalSpentLocal={totalSpentLocal}
+            showInKRW={showInKRW}
           />
         </View>
 
@@ -435,9 +454,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 8,
     paddingBottom: 12,
     borderBottomWidth: 1,
+  },
+  headerLeft: {
+    minWidth: 88,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   headerButton: {
     width: 44,
@@ -446,12 +472,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerCenter: {
-    flex: 1,
+    position: 'absolute',
+    left: 0,
+    right: 0,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   headerRight: {
+    minWidth: 88,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   scrollView: {
     flex: 1,

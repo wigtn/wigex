@@ -233,14 +233,24 @@ export function TodayExpenseTable({
               합계
             </Text>
             <View style={{ alignItems: 'flex-end' }}>
-              {Object.entries(totalLocal).map(([currency, amount]) => (
-                <Text key={currency} style={[typography.titleSmall, { color: colors.text }]}>
-                  {formatCurrency(amount, currency)}
+              {showInKRW ? (
+                // 원화 모드: KRW만 표시
+                <Text style={[typography.titleSmall, { color: colors.text }]}>
+                  {formatKRW(totalKRW)}
                 </Text>
-              ))}
-              <Text style={[typography.bodySmall, { color: colors.primary, marginTop: 2 }]}>
-                ≈ {formatKRW(totalKRW)}
-              </Text>
+              ) : (
+                // 현지통화 모드: 현지통화 + KRW 참고
+                <>
+                  {Object.entries(totalLocal).map(([currency, amount]) => (
+                    <Text key={currency} style={[typography.titleSmall, { color: colors.text }]}>
+                      {formatCurrency(amount, currency)}
+                    </Text>
+                  ))}
+                  <Text style={[typography.bodySmall, { color: colors.primary, marginTop: 2 }]}>
+                    ≈ {formatKRW(totalKRW)}
+                  </Text>
+                </>
+              )}
             </View>
           </View>
         </Card>

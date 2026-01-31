@@ -16,16 +16,27 @@ interface EmptyStateProps {
   };
 }
 
-export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+export const EmptyState = React.memo(function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: EmptyStateProps) {
   const { colors, spacing, typography } = useTheme();
 
   return (
-    <View style={[styles.container, { padding: spacing['2xl'] }]}>
+    <View
+      style={[styles.container, { padding: spacing['2xl'] }]}
+      accessible={true}
+      accessibilityLabel={`${title}${description ? `. ${description}` : ''}`}
+      accessibilityRole="text"
+    >
       <MaterialIcons
         name={icon}
         size={64}
         color={colors.textTertiary}
         style={styles.icon}
+        importantForAccessibility="no"
       />
       <Text
         style={[
@@ -58,7 +69,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

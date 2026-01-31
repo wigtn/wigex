@@ -42,11 +42,20 @@ async function handleAuthSuccess(response: AuthResponse): Promise<User> {
   return response.user;
 }
 
+// 구독 해제 함수를 저장
+let authExpiredUnsubscribe: (() => void) | null = null;
+// 초기화 여부 추적 (중복 구독 방지)
+let isStoreInitialized = false;
+
 export const useAuthStore = create<AuthState>((set, get) => {
-  // Subscribe to auth expiration events from API client
-  onAuthExpired(() => {
-    set({ user: null, isAuthenticated: false });
-  });
+  // 중복 구독 방지
+  if (!isStoreInitialized) {
+    isStoreInitialized = true;
+    // Subscribe to auth expiration events from API client
+    authExpiredUnsubscribe = onAuthExpired(() => {
+      set({ user: null, isAuthenticated: false });
+    });
+  }
 
   return {
     user: null,
@@ -56,6 +65,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
     error: null,
 
     initialize: async () => {
+      // 이미 초기화 중이면 무시 (레이스 컨디션 방지)
+      if (get().isLoading) return;
+
+      set({ isLoading: true });
+
       try {
         const token = await tokenService.getAccessToken();
         const isExpired = await tokenService.isTokenExpired();
@@ -74,15 +88,19 @@ export const useAuthStore = create<AuthState>((set, get) => {
               },
               isAuthenticated: true,
               isInitialized: true,
+              isLoading: false,
             });
 
-            // Refresh user info in background
-            try {
-              const { data } = await authApi.me();
-              set({ user: data.data });
-            } catch {
+            // Refresh user info in background (레이스 컨디션 방지)
+            // 현재 인증 상태를 확인하고 여전히 인증된 경우에만 업데이트
+            authApi.me().then(({ data }) => {
+              const currentState = get();
+              if (currentState.isAuthenticated && currentState.user?.id === storedUser.id) {
+                set({ user: data.data });
+              }
+            }).catch(() => {
               // Ignore background refresh errors
-            }
+            });
             return;
           }
 
@@ -98,6 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
               user: data.data,
               isAuthenticated: true,
               isInitialized: true,
+              isLoading: false,
             });
             return;
           } catch {
@@ -124,6 +143,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
                   },
                   isAuthenticated: true,
                   isInitialized: true,
+                  isLoading: false,
                 });
                 return;
               }
@@ -133,10 +153,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
           }
         }
 
-        set({ isInitialized: true });
+        set({ isInitialized: true, isLoading: false });
       } catch {
         await tokenService.clearTokens();
-        set({ isInitialized: true });
+        set({ isInitialized: true, isLoading: false });
       }
     },
 
@@ -197,6 +217,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
 
     logout: async () => {
+      // 로그아웃 중 다른 작업 방지
+      const currentState = get();
+      if (!currentState.isAuthenticated) return;
+
+      // 먼저 로컬 상태 초기화 (레이스 컨디션 방지)
+      set({ user: null, isAuthenticated: false, error: null });
+
       try {
         const refreshToken = await tokenService.getRefreshToken();
         if (refreshToken) {
@@ -206,10 +233,18 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
       } finally {
         await tokenService.clearTokens();
-        set({ user: null, isAuthenticated: false, error: null });
       }
     },
 
     clearError: () => set({ error: null }),
   };
 });
+
+// 앱 종료 시 구독 해제 (필요한 경우)
+export const cleanupAuthStore = () => {
+  if (authExpiredUnsubscribe) {
+    authExpiredUnsubscribe();
+    authExpiredUnsubscribe = null;
+  }
+  isStoreInitialized = false;
+};

@@ -1,7 +1,7 @@
 // Travel Helper v1.1 - Stats Screen
 // PRD FR-007: 글로벌 통화 토글 연동
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../../lib/theme';
@@ -186,11 +186,15 @@ export default function StatsScreen() {
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [stats, expenses, showInKRW, hasMultipleCurrencies, mainCurrency]);
 
-  const tabs: { id: TabType; label: string; icon: string }[] = [
+  const tabs = useMemo<{ id: TabType; label: string; icon: string }[]>(() => [
     { id: 'category', label: '카테고리', icon: 'category' },
     { id: 'currency', label: '통화', icon: 'attach-money' },
     { id: 'destination', label: '방문지', icon: 'place' },
-  ];
+  ], []);
+
+  const handleTabPress = useCallback((tabId: TabType) => {
+    setActiveTab(tabId);
+  }, []);
 
   // 초기 로딩 중일 때 Skeleton 표시
   if (isLoading && trips.length === 0) {
@@ -238,7 +242,12 @@ export default function StatsScreen() {
       </View>
 
       {/* 총 지출 카드 */}
-      <Card style={[styles.totalCard, { marginTop: spacing.md }]}>
+      <Card
+        style={[styles.totalCard, { marginTop: spacing.md }]}
+        accessible={true}
+        accessibilityLabel={`${activeTrip.name} 총 지출 ${formatKRW(stats.totalKRW)}`}
+        accessibilityRole="summary"
+      >
         <Text style={[typography.caption, { color: colors.textSecondary }]}>
           {activeTrip.name} 총 지출
         </Text>
@@ -351,7 +360,10 @@ export default function StatsScreen() {
       )}
 
       {/* 탭 */}
-      <View style={[styles.tabContainer, { marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: borderRadius.lg }]}>
+      <View
+        style={[styles.tabContainer, { marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: borderRadius.lg }]}
+        accessibilityRole="tablist"
+      >
         {tabs.map((tab) => (
           <TouchableOpacity
             key={tab.id}
@@ -362,7 +374,10 @@ export default function StatsScreen() {
                 borderRadius: borderRadius.md,
               },
             ]}
-            onPress={() => setActiveTab(tab.id)}
+            onPress={() => handleTabPress(tab.id)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === tab.id }}
+            accessibilityLabel={`${tab.label}별 통계 보기`}
           >
             <MaterialIcons
               name={tab.icon as keyof typeof MaterialIcons.glyphMap}

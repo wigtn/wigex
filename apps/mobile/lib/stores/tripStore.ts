@@ -10,6 +10,7 @@ interface TripState {
   activeTrip: Trip | null;
   activeTrips: Trip[];
   isLoading: boolean;
+  isInitialized: boolean; // 초기 데이터 로딩 완료 여부
   error: string | null;
   hasAutoNavigatedToTrip: boolean;
 
@@ -90,6 +91,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   destinations: [],
   currentDestination: null,
   isLoading: false,
+  isInitialized: false,
   error: null,
   hasAutoNavigatedToTrip: false,
 
@@ -120,6 +122,7 @@ export const useTripStore = create<TripState>((set, get) => ({
         activeTrip,
         destinations: allDestinations,
         isLoading: false,
+        isInitialized: true,
       });
 
       // Set current destination if active trip exists
@@ -133,8 +136,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '여행 목록을 불러오는데 실패했습니다';
-      console.error('Failed to load trips:', error);
-      set({ isLoading: false, error: message });
+      set({ isLoading: false, isInitialized: true, error: message });
     }
   },
 

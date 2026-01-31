@@ -1,7 +1,7 @@
 // Travel Helper v2.0 - AmountDisplay Component
 // 현지 통화 우선 표시 + 원화 참고용
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { useTheme } from '../../lib/theme';
 import { getCurrencyInfo } from '../../lib/utils/constants';
@@ -18,7 +18,7 @@ interface AmountDisplayProps {
   primaryColor?: string;
 }
 
-export function AmountDisplay({
+export const AmountDisplay = React.memo(function AmountDisplay({
   amount,
   currency,
   amountKRW,
@@ -28,10 +28,11 @@ export function AmountDisplay({
   style,
   primaryColor,
 }: AmountDisplayProps) {
-  const { colors, typography, spacing } = useTheme();
+  const { colors, typography } = useTheme();
   const currencyInfo = getCurrencyInfo(currency);
 
-  const getTextStyles = () => {
+  // 텍스트 스타일 계산을 메모이제이션
+  const textStyles = useMemo(() => {
     switch (size) {
       case 'small':
         return {
@@ -49,13 +50,24 @@ export function AmountDisplay({
           secondary: typography.caption,
         };
     }
-  };
+  }, [size, typography]);
 
-  const textStyles = getTextStyles();
-  const textAlign = align;
+  const alignItems = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+
+  // 접근성 레이블 생성
+  const accessibilityLabel = useMemo(() => {
+    const formattedAmount = formatCurrency(amount, currency);
+    const krwPart = amountKRW !== undefined ? `, 원화 약 ${formatKRW(amountKRW)}` : '';
+    return `금액: ${formattedAmount}${krwPart}`;
+  }, [amount, currency, amountKRW]);
 
   return (
-    <View style={[styles.container, { alignItems: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center' }, style]}>
+    <View
+      style={[styles.container, { alignItems }, style]}
+      accessible={true}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="text"
+    >
       {showFlag && currencyInfo && (
         <View style={styles.flagRow}>
           <Text style={styles.flag}>{currencyInfo.flag}</Text>
@@ -67,7 +79,7 @@ export function AmountDisplay({
       <Text
         style={[
           textStyles.primary,
-          { color: primaryColor || colors.text, textAlign },
+          { color: primaryColor || colors.text, textAlign: align },
         ]}
       >
         {formatCurrency(amount, currency)}
@@ -76,7 +88,7 @@ export function AmountDisplay({
         <Text
           style={[
             textStyles.secondary,
-            { color: colors.textTertiary, textAlign },
+            { color: colors.textTertiary, textAlign: align },
           ]}
         >
           {formatKRW(amountKRW)}
@@ -84,7 +96,7 @@ export function AmountDisplay({
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {},

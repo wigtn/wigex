@@ -43,17 +43,24 @@ export async function fetchExchangeRates(): Promise<ExchangeRateCache> {
       throw new Error('API returned error');
     }
 
+    // 환율 값 검증
+    const validatedRates: Record<string, number> = {};
+    for (const [currency, rate] of Object.entries(data.rates)) {
+      if (typeof rate === 'number' && isFinite(rate) && rate > 0) {
+        validatedRates[currency] = rate;
+      }
+    }
+
     const newCache: ExchangeRateCache = {
-      rates: data.rates,
+      rates: validatedRates,
       lastUpdated: new Date().toISOString(),
     };
 
     // 인메모리 캐시에 저장
     cachedRates = newCache;
     return newCache;
-  } catch (error) {
-    console.error('Failed to fetch exchange rates:', error);
-
+  } catch {
+    // 프로덕션에서 에러 로깅 제거 (보안)
     // 캐시된 값이 있으면 만료되어도 사용
     if (cachedRates) {
       return cachedRates;
@@ -74,5 +81,7 @@ function isCacheExpired(lastUpdated: string): boolean {
 }
 
 export function getExchangeRate(rates: Record<string, number>, currencyCode: string): number {
-  return rates[currencyCode] ?? DEFAULT_RATES[currencyCode] ?? 1;
+  const rate = rates[currencyCode] ?? DEFAULT_RATES[currencyCode] ?? 1;
+  // 유효하지 않은 환율 방지
+  return isFinite(rate) && rate > 0 ? rate : 1;
 }

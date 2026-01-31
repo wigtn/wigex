@@ -3,6 +3,7 @@
 import React from 'react';
 import { TextInput, View, Text, StyleSheet, TextInputProps, ViewStyle } from 'react-native';
 import { useTheme } from '../../lib/theme';
+import { INPUT } from '../../lib/constants/layout';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -14,7 +15,7 @@ interface InputProps extends TextInputProps {
   rightElement?: React.ReactNode;
 }
 
-export function Input({
+export const Input = React.memo(function Input({
   label,
   error,
   helperText,
@@ -23,14 +24,22 @@ export function Input({
   leftElement,
   rightElement,
   style,
+  accessibilityLabel,
   ...props
 }: InputProps) {
-  const { colors, borderRadius, spacing, typography } = useTheme();
+  const { colors, borderRadius, typography } = useTheme();
+
+  // 접근성 레이블 생성
+  const a11yLabel = accessibilityLabel || label;
+  const a11yHint = error || helperText;
 
   return (
     <View style={[styles.container, containerStyle]}>
       {label && (
-        <Text style={[styles.label, typography.labelMedium, { color: colors.text }]}>
+        <Text
+          style={[styles.label, typography.labelMedium, { color: colors.text }]}
+          accessibilityRole="text"
+        >
           {label}
         </Text>
       )}
@@ -57,12 +66,18 @@ export function Input({
             style,
           ]}
           placeholderTextColor={colors.textTertiary}
+          accessibilityLabel={a11yLabel}
+          accessibilityHint={a11yHint}
+          accessibilityState={{ disabled: props.editable === false }}
           {...props}
         />
         {rightElement && <View style={styles.rightElement}>{rightElement}</View>}
       </View>
       {error && (
-        <Text style={[styles.error, typography.caption, { color: colors.error }]}>
+        <Text
+          style={[styles.error, typography.caption, { color: colors.error }]}
+          accessibilityRole="alert"
+        >
           {error}
         </Text>
       )}
@@ -73,7 +88,7 @@ export function Input({
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -86,7 +101,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    minHeight: 48,
+    minHeight: INPUT.MIN_HEIGHT,
   },
   input: {
     paddingHorizontal: 16,

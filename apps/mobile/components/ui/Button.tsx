@@ -1,10 +1,12 @@
 // Travel Helper v2.0 - Button Component
 
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../lib/theme';
+import { useSettingsStore } from '../../lib/stores/settingsStore';
+import { TOUCH_TARGET } from '../../lib/constants/layout';
 
 interface ButtonProps {
   title: string;
@@ -18,9 +20,10 @@ interface ButtonProps {
   fullWidth?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
+  accessibilityHint?: string;
 }
 
-export function Button({
+export const Button = React.memo(function Button({
   title,
   onPress,
   variant = 'primary',
@@ -32,97 +35,111 @@ export function Button({
   fullWidth = false,
   style,
   textStyle,
+  accessibilityHint,
 }: ButtonProps) {
   const { colors, borderRadius, spacing } = useTheme();
+  const hapticEnabled = useSettingsStore((state) => state.hapticEnabled);
 
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const handlePress = useCallback(() => {
+    if (hapticEnabled) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     onPress();
-  };
+  }, [hapticEnabled, onPress]);
 
-  const getBackgroundColor = () => {
-    if (disabled) return colors.border;
-    switch (variant) {
-      case 'primary':
-        return colors.primary;
-      case 'secondary':
-        return colors.secondaryLight;
-      case 'danger':
-        return colors.error;
-      case 'outline':
-      case 'ghost':
-        return 'transparent';
-      default:
-        return colors.primary;
+  // 스타일 계산을 메모이제이션
+  const { backgroundColor, textColor, borderColor, sizeStyles, textSize, iconSize } = useMemo(() => {
+    // Background color
+    let bg: string;
+    if (disabled) {
+      bg = colors.border;
+    } else {
+      switch (variant) {
+        case 'primary':
+          bg = colors.primary;
+          break;
+        case 'secondary':
+          bg = colors.secondaryLight;
+          break;
+        case 'danger':
+          bg = colors.error;
+          break;
+        case 'outline':
+        case 'ghost':
+          bg = 'transparent';
+          break;
+        default:
+          bg = colors.primary;
+      }
     }
-  };
 
-  const getTextColor = () => {
-    if (disabled) return colors.textSecondary;
-    switch (variant) {
-      case 'primary':
-      case 'danger':
-        return colors.textInverse;
-      case 'secondary':
-        return colors.secondary;
-      case 'outline':
-        return colors.text;
-      case 'ghost':
-        return colors.primary;
-      default:
-        return colors.textInverse;
+    // Text color
+    let text: string;
+    if (disabled) {
+      text = colors.textSecondary;
+    } else {
+      switch (variant) {
+        case 'primary':
+        case 'danger':
+          text = colors.textInverse;
+          break;
+        case 'secondary':
+          text = colors.secondary;
+          break;
+        case 'outline':
+          text = colors.text;
+          break;
+        case 'ghost':
+          text = colors.primary;
+          break;
+        default:
+          text = colors.textInverse;
+      }
     }
-  };
 
-  const getBorderColor = () => {
-    if (variant === 'outline') return colors.border;
-    return 'transparent';
-  };
+    // Border color
+    const border = variant === 'outline' ? colors.border : 'transparent';
 
-  const getSizeStyles = (): ViewStyle => {
+    // Size styles
+    let sizeStyle: ViewStyle;
+    let tSize: number;
+    let iSize: number;
     switch (size) {
       case 'small':
-        return { paddingVertical: spacing.sm, paddingHorizontal: spacing.base };
+        sizeStyle = { paddingVertical: spacing.sm, paddingHorizontal: spacing.base };
+        tSize = 14;
+        iSize = 16;
+        break;
       case 'large':
-        return { paddingVertical: spacing.base, paddingHorizontal: spacing.xl };
+        sizeStyle = { paddingVertical: spacing.base, paddingHorizontal: spacing.xl };
+        tSize = 18;
+        iSize = 24;
+        break;
       default:
-        return { paddingVertical: spacing.md, paddingHorizontal: spacing.lg };
+        sizeStyle = { paddingVertical: spacing.md, paddingHorizontal: spacing.lg };
+        tSize = 16;
+        iSize = 20;
     }
-  };
 
-  const getTextSize = () => {
-    switch (size) {
-      case 'small':
-        return 14;
-      case 'large':
-        return 18;
-      default:
-        return 16;
-    }
-  };
-
-  const getIconSize = () => {
-    switch (size) {
-      case 'small':
-        return 16;
-      case 'large':
-        return 24;
-      default:
-        return 20;
-    }
-  };
-
-  const textColor = getTextColor();
+    return {
+      backgroundColor: bg,
+      textColor: text,
+      borderColor: border,
+      sizeStyles: sizeStyle,
+      textSize: tSize,
+      iconSize: iSize,
+    };
+  }, [colors, disabled, variant, size, spacing]);
 
   return (
     <TouchableOpacity
       style={[
         styles.button,
-        getSizeStyles(),
+        sizeStyles,
         {
-          backgroundColor: getBackgroundColor(),
+          backgroundColor,
           borderWidth: variant === 'outline' ? 1 : 0,
-          borderColor: getBorderColor(),
+          borderColor,
           borderRadius: borderRadius.md,
           width: fullWidth ? '100%' : undefined,
         },
@@ -131,6 +148,10 @@ export function Button({
       onPress={handlePress}
       disabled={disabled || loading}
       activeOpacity={0.7}
+      accessibilityLabel={title}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: disabled || loading }}
+      accessibilityHint={accessibilityHint}
     >
       {loading ? (
         <ActivityIndicator color={textColor} />
@@ -139,7 +160,7 @@ export function Button({
           {icon && iconPosition === 'left' && (
             <MaterialIcons
               name={icon}
-              size={getIconSize()}
+              size={iconSize}
               color={textColor}
               style={styles.iconLeft}
             />
@@ -147,7 +168,7 @@ export function Button({
           <Text
             style={[
               styles.text,
-              { color: textColor, fontSize: getTextSize() },
+              { color: textColor, fontSize: textSize },
               textStyle,
             ]}
           >
@@ -156,7 +177,7 @@ export function Button({
           {icon && iconPosition === 'right' && (
             <MaterialIcons
               name={icon}
-              size={getIconSize()}
+              size={iconSize}
               color={textColor}
               style={styles.iconRight}
             />
@@ -165,13 +186,13 @@ export function Button({
       )}
     </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: TOUCH_TARGET.MIN_SIZE,
   },
   content: {
     flexDirection: 'row',

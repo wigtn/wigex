@@ -1,4 +1,4 @@
-// Travel Helper v1.1 - UI Components Index
+// Travel Helper v2.0 - UI Components Index
 
 export { Button } from './Button';
 export { Card } from './Card';
@@ -11,4 +11,7 @@ export { BottomSheet } from './BottomSheet';
 export { AmountDisplay } from './AmountDisplay';
 export { CategoryIcon } from './CategoryIcon';
 export { CurrencyToggle } from './CurrencyToggle';
+export { SelectorButton } from './SelectorButton';
+export { SelectableListItem } from './SelectableListItem';
+export { FullScreenLoading } from './FullScreenLoading';
 export { Skeleton, HomeScreenSkeleton, CalendarScreenSkeleton, StatsScreenSkeleton, ExpenseListSkeleton, ExpenseCardSkeleton } from './Skeleton';

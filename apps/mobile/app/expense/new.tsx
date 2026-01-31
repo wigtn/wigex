@@ -1,7 +1,7 @@
 // Travel Helper v2.0 - New Expense Screen
 // PRD receipt-expense-input: 영수증 입력/직접 입력 분기
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -100,11 +100,11 @@ export default function NewExpenseScreen() {
   const [loading, setLoading] = useState(false);
 
   // 햅틱 피드백 헬퍼
-  const triggerHaptic = (style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) => {
+  const triggerHaptic = useCallback((style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) => {
     if (hapticEnabled) {
       Haptics.impactAsync(style);
     }
-  };
+  }, [hapticEnabled]);
 
   // 뒤로가기/취소 시 임시 이미지 정리
   const cleanupAndGoBack = useCallback(async () => {
@@ -173,8 +173,10 @@ export default function NewExpenseScreen() {
   };
 
   // destinations가 로드되면 첫 번째 방문지 선택
+  const hasInitializedDestination = useRef(false);
   useEffect(() => {
-    if (destinations.length > 0 && !selectedDestination) {
+    if (destinations.length > 0 && !hasInitializedDestination.current) {
+      hasInitializedDestination.current = true;
       setSelectedDestination(destinations[0]);
     }
   }, [destinations]);
@@ -239,22 +241,22 @@ export default function NewExpenseScreen() {
     }
   };
 
-  const handleAmountChange = (text: string) => {
+  const handleAmountChange = useCallback((text: string) => {
     const cleaned = text.replace(/[^0-9.]/g, '');
     setAmount(cleaned);
-  };
+  }, []);
 
-  const handleCategorySelect = (cat: Category) => {
+  const handleCategorySelect = useCallback((cat: Category) => {
     triggerHaptic();
     setCategory(cat);
     setShowCategorySheet(false);
-  };
+  }, [triggerHaptic]);
 
-  const handleDestinationSelect = (dest: Destination) => {
+  const handleDestinationSelect = useCallback((dest: Destination) => {
     setSelectedDestination(dest);
     setShowDestinationSelector(false);
     triggerHaptic();
-  };
+  }, [triggerHaptic]);
 
   const handleSubmit = async () => {
     if (!selectedTrip) {
@@ -294,8 +296,7 @@ export default function NewExpenseScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       router.back();
-    } catch (error) {
-      console.error(error);
+    } catch {
       Alert.alert('오류', '지출 저장에 실패했습니다');
     } finally {
       setLoading(false);
@@ -303,9 +304,9 @@ export default function NewExpenseScreen() {
   };
 
   // 카테고리 정보
-  const getCategoryInfo = () => {
+  const categoryInfo = useMemo(() => {
     return CATEGORIES.find(c => c.id === category) || CATEGORIES[0];
-  };
+  }, [category]);
 
   // 진행 중인 여행이 없을 때
   if (activeTrips.length === 0) {
@@ -473,7 +474,7 @@ export default function NewExpenseScreen() {
             >
               <CategoryIcon category={category} size="small" />
               <Text style={[typography.labelMedium, { color: colors.text, marginLeft: spacing.sm }]}>
-                {getCategoryInfo().label}
+                {categoryInfo.label}
               </Text>
               <MaterialIcons name="expand-more" size={20} color={colors.textSecondary} style={styles.selectorIcon} />
             </TouchableOpacity>

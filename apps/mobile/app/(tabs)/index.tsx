@@ -1,7 +1,7 @@
 // Main Screen Revamp - 글로벌 홈 화면
 // PRD FR-101~FR-109: 지도 + 여행 리스트 + 자동 전환
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -10,23 +10,37 @@ import { useTripStore } from '../../lib/stores/tripStore';
 import { Trip, getTripStatus } from '../../lib/types';
 import { TripMapView } from '../../components/map';
 import { TripCard } from '../../components/home';
-import { Card, EmptyState, HomeScreenSkeleton } from '../../components/ui';
+import { Card, EmptyState, FullScreenLoading } from '../../components/ui';
 
 export default function GlobalHomeScreen() {
   const { colors, spacing, typography, borderRadius } = useTheme();
-  const {
-    trips,
-    destinations,
-    isLoading,
-    loadTrips,
-    loadAllDestinations,
-    hasAutoNavigatedToTrip,
-    setHasAutoNavigatedToTrip,
-  } = useTripStore();
+
+  // 스토어에서 필요한 상태만 개별적으로 구독 (리렌더링 최소화)
+  const trips = useTripStore((state) => state.trips);
+  const destinations = useTripStore((state) => state.destinations);
+  const error = useTripStore((state) => state.error);
+  const loadTrips = useTripStore((state) => state.loadTrips);
+  const hasAutoNavigatedToTrip = useTripStore((state) => state.hasAutoNavigatedToTrip);
+  const setHasAutoNavigatedToTrip = useTripStore((state) => state.setHasAutoNavigatedToTrip);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [isFirstLoadComplete, setIsFirstLoadComplete] = useState(false);
 
-  // 여행을 상태별로 분류
+  // 자동 네비게이션 실행 여부 추적 (ref로 관리하여 렌더링에 영향 없음)
+  const hasTriggeredAutoNav = useRef(false);
+  const hasStartedLoading = useRef(false);
+
+  // 초기 데이터 로딩 - 컴포넌트에서 직접 관리
+  useEffect(() => {
+    if (hasStartedLoading.current) return;
+    hasStartedLoading.current = true;
+
+    loadTrips().finally(() => {
+      setIsFirstLoadComplete(true);
+    });
+  }, [loadTrips]);
+
+  // 여행을 상태별로 분류 - trips가 변경될 때만 재계산
   const categorizedTrips = useMemo(() => {
     const active: Trip[] = [];
     const upcoming: Trip[] = [];
@@ -48,64 +62,55 @@ export default function GlobalHomeScreen() {
   }, [trips]);
 
   // 앱 실행 시 자동 여행 모드 전환 (앱 실행 중 1회만)
+  // 의존성을 최소화하고 ref를 사용하여 무한 루프 방지
   useEffect(() => {
-    if (!hasAutoNavigatedToTrip && !isLoading && categorizedTrips.active.length > 0) {
+    // 초기 로딩 안됐거나, 이미 자동 네비게이션을 시도했으면 무시
+    if (!isFirstLoadComplete || hasTriggeredAutoNav.current) return;
+
+    // 스토어에서 이미 자동 네비게이션을 했다면 무시
+    if (hasAutoNavigatedToTrip) {
+      hasTriggeredAutoNav.current = true;
+      return;
+    }
+
+    // 활성 여행이 있는 경우에만 자동 전환
+    if (categorizedTrips.active.length > 0) {
+      hasTriggeredAutoNav.current = true;
       const activeTrip = categorizedTrips.active[0];
       setHasAutoNavigatedToTrip(true);
       // 자동 전환 - 여행 메인 화면으로 이동
       router.replace(`/trip/${activeTrip.id}/main`);
     }
-  }, [isLoading, categorizedTrips.active, hasAutoNavigatedToTrip, setHasAutoNavigatedToTrip]);
+  }, [isFirstLoadComplete, hasAutoNavigatedToTrip, categorizedTrips.active.length, setHasAutoNavigatedToTrip]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadTrips();
-    await loadAllDestinations();
-    setRefreshing(false);
-  }, [loadTrips, loadAllDestinations]);
+    try {
+      await loadTrips();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadTrips]);
 
-  const handleTripPress = (tripId: string) => {
+  const handleTripPress = useCallback((tripId: string) => {
     router.push(`/trip/${tripId}/main`);
-  };
+  }, []);
 
-  const handleMarkerPress = (tripId: string) => {
+  const handleMarkerPress = useCallback((tripId: string) => {
     router.push(`/trip/${tripId}/main`);
-  };
+  }, []);
 
-  const handleCreateTrip = () => {
+  const handleCreateTrip = useCallback(() => {
     router.push('/trip/new');
-  };
+  }, []);
 
-  // 초기 로딩 중
-  if (isLoading && trips.length === 0) {
-    return <HomeScreenSkeleton />;
+  // 초기 로딩 중 (아직 데이터를 한 번도 불러오지 않은 상태)
+  if (!isFirstLoadComplete) {
+    return <FullScreenLoading message="여행 정보를 불러오는 중..." iconName="flight-takeoff" />;
   }
 
   const hasTrips = trips.length > 0;
-  const hasActiveOrUpcoming = categorizedTrips.active.length > 0 || categorizedTrips.upcoming.length > 0;
-
-  // 섹션 헤더 컴포넌트
-  const SectionHeader = ({
-    title,
-    icon,
-    iconColor,
-    count
-  }: {
-    title: string;
-    icon: string;
-    iconColor: string;
-    count: number;
-  }) => (
-    <View style={[styles.sectionHeader, { marginTop: spacing.lg, marginBottom: spacing.sm }]}>
-      <View style={styles.sectionTitleRow}>
-        <View style={[styles.sectionIcon, { backgroundColor: iconColor + '20' }]}>
-          <MaterialIcons name={icon as any} size={16} color={iconColor} />
-        </View>
-        <Text style={[typography.titleMedium, { color: colors.text }]}>{title}</Text>
-      </View>
-      <Text style={[typography.labelSmall, { color: colors.textTertiary }]}>{count}개</Text>
-    </View>
-  );
+  const hasError = !!error && trips.length === 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -151,6 +156,9 @@ export default function GlobalHomeScreen() {
                   icon="flight-takeoff"
                   iconColor={colors.primary}
                   count={categorizedTrips.active.length}
+                  spacing={spacing}
+                  typography={typography}
+                  colors={colors}
                 />
                 {categorizedTrips.active.map((trip) => (
                   <TripCard
@@ -172,6 +180,9 @@ export default function GlobalHomeScreen() {
                   icon="event"
                   iconColor="#4DABF7"
                   count={categorizedTrips.upcoming.length}
+                  spacing={spacing}
+                  typography={typography}
+                  colors={colors}
                 />
                 {categorizedTrips.upcoming.map((trip) => (
                   <TripCard
@@ -193,6 +204,9 @@ export default function GlobalHomeScreen() {
                   icon="history"
                   iconColor={colors.textTertiary}
                   count={categorizedTrips.past.length}
+                  spacing={spacing}
+                  typography={typography}
+                  colors={colors}
                 />
                 {categorizedTrips.past.slice(0, 5).map((trip) => (
                   <TripCard
@@ -207,6 +221,8 @@ export default function GlobalHomeScreen() {
                   <TouchableOpacity
                     style={[styles.showMoreButton, { borderColor: colors.border }]}
                     onPress={() => {/* TODO: 전체 여행 목록 화면 */}}
+                    accessibilityLabel={`과거 여행 ${categorizedTrips.past.length - 5}개 더보기`}
+                    accessibilityRole="button"
                   >
                     <Text style={[typography.labelMedium, { color: colors.textSecondary }]}>
                       더보기 ({categorizedTrips.past.length - 5}개)
@@ -227,6 +243,8 @@ export default function GlobalHomeScreen() {
                 },
               ]}
               onPress={handleCreateTrip}
+              accessibilityLabel="새 여행 만들기"
+              accessibilityRole="button"
             >
               <MaterialIcons name="add" size={24} color={colors.primary} />
               <Text style={[typography.labelLarge, { color: colors.primary }]}>
@@ -234,6 +252,17 @@ export default function GlobalHomeScreen() {
               </Text>
             </TouchableOpacity>
           </>
+        ) : hasError ? (
+          /* 에러 발생 시 */
+          <EmptyState
+            icon="error-outline"
+            title="데이터를 불러올 수 없습니다"
+            description={error || '네트워크 연결을 확인하고 다시 시도해주세요'}
+            action={{
+              label: '다시 시도',
+              onPress: onRefresh,
+            }}
+          />
         ) : (
           /* 여행이 없을 때 */
           <EmptyState
@@ -250,6 +279,41 @@ export default function GlobalHomeScreen() {
     </View>
   );
 }
+
+// 섹션 헤더 컴포넌트 분리 (React.memo 적용)
+import React from 'react';
+
+interface SectionHeaderProps {
+  title: string;
+  icon: string;
+  iconColor: string;
+  count: number;
+  spacing: any;
+  typography: any;
+  colors: any;
+}
+
+const SectionHeader = React.memo(function SectionHeader({
+  title,
+  icon,
+  iconColor,
+  count,
+  spacing,
+  typography,
+  colors,
+}: SectionHeaderProps) {
+  return (
+    <View style={[styles.sectionHeader, { marginTop: spacing.lg, marginBottom: spacing.sm }]}>
+      <View style={styles.sectionTitleRow}>
+        <View style={[styles.sectionIcon, { backgroundColor: iconColor + '20' }]}>
+          <MaterialIcons name={icon as any} size={16} color={iconColor} />
+        </View>
+        <Text style={[typography.titleMedium, { color: colors.text }]}>{title}</Text>
+      </View>
+      <Text style={[typography.labelSmall, { color: colors.textTertiary }]}>{count}개</Text>
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   container: {

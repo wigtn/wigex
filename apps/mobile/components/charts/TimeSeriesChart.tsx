@@ -19,7 +19,7 @@ interface TimeSeriesChartProps {
 
 const { width: screenWidth } = Dimensions.get('window');
 
-export function TimeSeriesChart({ data, height = 200 }: TimeSeriesChartProps) {
+export const TimeSeriesChart = React.memo(function TimeSeriesChart({ data, height = 200 }: TimeSeriesChartProps) {
   const { colors, isDark, spacing, typography } = useTheme();
 
   // 빈 데이터일 경우
@@ -61,8 +61,20 @@ export function TimeSeriesChart({ data, height = 200 }: TimeSeriesChartProps) {
   // 차트 너비 계산 (카드 패딩 고려)
   const chartWidth = screenWidth - 32 - 32; // 화면 - 좌우 마진 - 카드 패딩
 
+  // 접근성 레이블 생성
+  const accessibilityLabel = React.useMemo(() => {
+    const maxAmount = Math.max(...chartData.amounts);
+    const minAmount = Math.min(...chartData.amounts);
+    return `일별 지출 추이 차트. 최고 ${formatKRW(maxAmount)}, 최저 ${formatKRW(minAmount)}`;
+  }, [chartData.amounts]);
+
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      accessible={true}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="image"
+    >
       <LineChart
         data={{
           labels: chartData.labels,
@@ -126,7 +138,7 @@ export function TimeSeriesChart({ data, height = 200 }: TimeSeriesChartProps) {
       />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

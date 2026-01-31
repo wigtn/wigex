@@ -1,6 +1,6 @@
 // Travel Helper v2.0 - CategoryIcon Component
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../../lib/theme';
@@ -13,7 +13,14 @@ interface CategoryIconProps {
   style?: ViewStyle;
 }
 
-export function CategoryIcon({
+// 사이즈 상수
+const SIZES = {
+  small: { container: 32, icon: 16 },
+  medium: { container: 40, icon: 20 },
+  large: { container: 56, icon: 28 },
+} as const;
+
+export const CategoryIcon = React.memo(function CategoryIcon({
   category,
   size = 'medium',
   showLabel = false,
@@ -21,26 +28,22 @@ export function CategoryIcon({
 }: CategoryIconProps) {
   const { colors, borderRadius, isDark } = useTheme();
 
-  const categoryInfo = CATEGORIES.find(c => c.id === category);
+  const categoryInfo = useMemo(() => {
+    return CATEGORIES.find(c => c.id === category);
+  }, [category]);
+
   if (!categoryInfo) return null;
 
   const categoryColor = isDark ? categoryInfo.darkColor : categoryInfo.lightColor;
-
-  const getSize = () => {
-    switch (size) {
-      case 'small':
-        return { container: 32, icon: 16 };
-      case 'large':
-        return { container: 56, icon: 28 };
-      default:
-        return { container: 40, icon: 20 };
-    }
-  };
-
-  const dimensions = getSize();
+  const dimensions = SIZES[size];
 
   return (
-    <View style={[styles.wrapper, style]}>
+    <View
+      style={[styles.wrapper, style]}
+      accessible={true}
+      accessibilityLabel={categoryInfo.label}
+      accessibilityRole="image"
+    >
       <View
         style={[
           styles.container,
@@ -65,7 +68,7 @@ export function CategoryIcon({
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   wrapper: {

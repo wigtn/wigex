@@ -1,51 +1,69 @@
 // Travel Helper v2.0 - Card Component
 
-import React, { ReactNode } from 'react';
-import { View, StyleSheet, ViewStyle, StyleProp, Pressable } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, StyleSheet, ViewStyle, StyleProp, Pressable, AccessibilityRole } from 'react-native';
 import { useTheme } from '../../lib/theme';
 
 interface CardProps {
-  children: ReactNode;
+  children: React.ReactNode;
   variant?: 'default' | 'outlined' | 'elevated' | 'highlighted';
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  accessible?: boolean;
+  accessibilityRole?: AccessibilityRole;
 }
 
-export function Card({ children, variant = 'default', onPress, style }: CardProps) {
+export const Card = React.memo(function Card({
+  children,
+  variant = 'default',
+  onPress,
+  style,
+  accessibilityLabel,
+  accessibilityHint,
+  accessible,
+  accessibilityRole,
+}: CardProps) {
   const { colors, borderRadius, spacing, shadows } = useTheme();
 
-  const getCardStyle = (): ViewStyle => {
+  const cardStyle = useMemo((): ViewStyle => {
+    let variantStyle: ViewStyle;
+
     switch (variant) {
       case 'outlined':
-        return {
+        variantStyle = {
           backgroundColor: colors.background,
           borderWidth: 1,
           borderColor: colors.border,
         };
+        break;
       case 'elevated':
-        return {
+        variantStyle = {
           backgroundColor: colors.surfaceElevated,
           ...shadows.md,
         };
+        break;
       case 'highlighted':
-        return {
+        variantStyle = {
           backgroundColor: colors.primaryLight,
           borderLeftWidth: 4,
           borderLeftColor: colors.primary,
         };
+        break;
       default:
-        return {
+        variantStyle = {
           backgroundColor: colors.surface,
           ...shadows.sm,
         };
     }
-  };
 
-  const cardStyle: ViewStyle = {
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    ...getCardStyle(),
-  };
+    return {
+      borderRadius: borderRadius.lg,
+      padding: spacing.lg,
+      ...variantStyle,
+    };
+  }, [variant, colors, borderRadius, spacing, shadows]);
 
   if (onPress) {
     return (
@@ -56,6 +74,9 @@ export function Card({ children, variant = 'default', onPress, style }: CardProp
           style,
         ]}
         onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
       >
         {children}
       </Pressable>
@@ -63,11 +84,16 @@ export function Card({ children, variant = 'default', onPress, style }: CardProp
   }
 
   return (
-    <View style={[cardStyle, style]}>
+    <View
+      style={[cardStyle, style]}
+      accessible={accessible}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+    >
       {children}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   pressed: {

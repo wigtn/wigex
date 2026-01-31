@@ -24,7 +24,7 @@ interface DonutChartProps {
 
 const { width: screenWidth } = Dimensions.get('window');
 
-export function DonutChart({ data, totalAmount, size = 140 }: DonutChartProps) {
+export const DonutChart = React.memo(function DonutChart({ data, totalAmount, size = 140 }: DonutChartProps) {
   const { colors, typography, spacing } = useTheme();
 
   const strokeWidth = size * 0.18;
@@ -54,8 +54,19 @@ export function DonutChart({ data, totalAmount, size = 140 }: DonutChartProps) {
     return null;
   }
 
+  // 접근성 레이블 생성
+  const accessibilityLabel = React.useMemo(() => {
+    const topItems = data.slice(0, 3).map(item => `${item.label} ${item.percentage}%`).join(', ');
+    return `카테고리별 지출 도넛 차트. 총 ${formatKRW(totalAmount)}. ${topItems}`;
+  }, [data, totalAmount]);
+
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      accessible={true}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="image"
+    >
       <View style={styles.chartSection}>
         {/* 도넛 차트 */}
         <View style={[styles.chartWrapper, { width: size, height: size }]}>
@@ -119,7 +130,7 @@ export function DonutChart({ data, totalAmount, size = 140 }: DonutChartProps) {
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

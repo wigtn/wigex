@@ -4,21 +4,47 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../../lib/theme';
 import { Card } from '../ui';
-import { formatKRW } from '../../lib/utils/currency';
+import { formatKRW, formatCurrency } from '../../lib/utils/currency';
+
+interface LocalAmount {
+  currency: string;
+  amount: number;
+}
 
 interface BudgetSummaryCardProps {
   budget?: number | null;
-  totalSpent: number;
+  totalSpent: number; // KRW
+  totalSpentLocal?: LocalAmount[]; // 현지통화별 지출 합계
+  showInKRW?: boolean;
   compact?: boolean;
 }
 
-export function BudgetSummaryCard({ budget, totalSpent, compact = false }: BudgetSummaryCardProps) {
+export function BudgetSummaryCard({
+  budget,
+  totalSpent,
+  totalSpentLocal = [],
+  showInKRW = true,
+  compact = false,
+}: BudgetSummaryCardProps) {
   const { colors, spacing, typography } = useTheme();
 
   const remaining = budget ? budget - totalSpent : 0;
   const percentage = budget ? Math.round((totalSpent / budget) * 100) : 0;
   const isOverBudget = budget ? totalSpent > budget : false;
   const isWarning = budget ? percentage >= 80 && percentage < 100 : false;
+
+  // 총 지출 표시 포맷
+  const formatTotalSpent = () => {
+    if (showInKRW || totalSpentLocal.length === 0) {
+      return formatKRW(totalSpent);
+    }
+    // 현지통화 모드: 첫 번째 통화만 표시 (주요 통화)
+    if (totalSpentLocal.length === 1) {
+      return formatCurrency(totalSpentLocal[0].amount, totalSpentLocal[0].currency);
+    }
+    // 여러 통화가 있는 경우 첫 번째 + 외 N개 표시
+    return formatCurrency(totalSpentLocal[0].amount, totalSpentLocal[0].currency);
+  };
 
   // Get progress bar color
   const getProgressColor = () => {
@@ -35,8 +61,13 @@ export function BudgetSummaryCard({ budget, totalSpent, compact = false }: Budge
           총 지출
         </Text>
         <Text style={[typography.headlineMedium, { color: colors.text, marginTop: 4 }]}>
-          {formatKRW(totalSpent)}
+          {formatTotalSpent()}
         </Text>
+        {!showInKRW && totalSpentLocal.length > 0 && (
+          <Text style={[typography.caption, { color: colors.textTertiary, marginTop: 2 }]}>
+            ≈ {formatKRW(totalSpent)}
+          </Text>
+        )}
       </Card>
     );
   }
@@ -61,8 +92,13 @@ export function BudgetSummaryCard({ budget, totalSpent, compact = false }: Budge
             총 지출
           </Text>
           <Text style={[typography.titleMedium, { color: colors.text }]}>
-            {formatKRW(totalSpent)}
+            {formatTotalSpent()}
           </Text>
+          {!showInKRW && totalSpentLocal.length > 0 && (
+            <Text style={[typography.caption, { color: colors.textTertiary }]}>
+              ≈ {formatKRW(totalSpent)}
+            </Text>
+          )}
         </View>
 
         <View style={[styles.divider, { backgroundColor: colors.border }]} />

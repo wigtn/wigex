@@ -1,6 +1,6 @@
 // Travel Helper v2.0 - Root Layout (with Auth & Sync)
 
-import { useEffect } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import {
   View,
   ActivityIndicator,
@@ -37,80 +37,95 @@ const styles = StyleSheet.create({
 
 export default function RootLayout() {
   const { colors, isDark } = useTheme();
-  const navigation = useRouter();
+  const router = useRouter();
   const segments = useSegments();
 
   // Auth state
-  const {
-    isAuthenticated,
-    isInitialized,
-    initialize: initAuth,
-  } = useAuthStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isInitialized = useAuthStore((state) => state.isInitialized);
+  const initAuth = useAuthStore((state) => state.initialize);
 
   // Sync state
-  const { initialize: initSync } = useSyncStore();
+  const initSync = useSyncStore((state) => state.initialize);
 
-  // Data stores
+  // Data stores - selector로 분리하여 불필요한 리렌더링 방지
   const loadRates = useExchangeRateStore((state) => state.loadRates);
   const loadTrips = useTripStore((state) => state.loadTrips);
-  const loadAllDestinations = useTripStore(
-    (state) => state.loadAllDestinations,
-  );
-  const activeTrip = useTripStore((state) => state.activeTrip);
+  const loadAllDestinations = useTripStore((state) => state.loadAllDestinations);
+  const activeTripId = useTripStore((state) => state.activeTrip?.id);
   const loadExpenses = useExpenseStore((state) => state.loadExpenses);
+
+  // 초기화 여부 추적 (중복 실행 방지)
+  const hasInitializedAuth = useRef(false);
+  const hasInitializedData = useRef(false);
+  const syncCleanup = useRef<(() => void) | null>(null);
 
   // Initialize auth on app start (run once)
   useEffect(() => {
-    initAuth();
-    // Clean up old receipt cache (24+ hours old)
-    cleanupOldReceiptCache();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (hasInitializedAuth.current) return;
+    hasInitializedAuth.current = true;
 
-  // Handle auth-based routing
+    initAuth();
+    // Clean up old receipt cache (24+ hours old) - fire and forget
+    cleanupOldReceiptCache().catch(() => {});
+  }, [initAuth]);
+
+  // Handle auth-based routing - segments 변경 최소화
+  const currentSegment = segments[0];
   useEffect(() => {
     if (!isInitialized) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
+    const inAuthGroup = currentSegment === "(auth)";
 
     if (!isAuthenticated && !inAuthGroup) {
       // Not logged in, redirect to login
-      navigation.replace("/(auth)/login");
+      router.replace("/(auth)/login");
     } else if (isAuthenticated && inAuthGroup) {
       // Logged in but on auth screen, redirect to main app
-      navigation.replace("/(tabs)");
+      router.replace("/(tabs)");
     }
-  }, [isAuthenticated, isInitialized, segments, navigation]);
+  }, [isAuthenticated, isInitialized, currentSegment, router]);
 
-  // Initialize data when authenticated
+  // Initialize data when authenticated (한 번만 실행)
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || hasInitializedData.current) return;
+    hasInitializedData.current = true;
 
     const initData = async () => {
-      try {
-        // Initialize sync
-        await initSync();
-        // Load exchange rates
-        await loadRates();
-        // Load trips from server
-        await loadTrips();
-        // Load all destinations for global home screen map
-        await loadAllDestinations();
-      } catch (error) {
-        console.error('Failed to initialize data:', error);
-      }
+      // Initialize sync
+      syncCleanup.current = initSync();
+
+      // 각각 독립적으로 실행 (하나가 실패해도 다른 것들은 실행됨)
+      await Promise.allSettled([
+        loadRates(),
+        loadTrips(),
+      ]);
     };
     initData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, initSync, loadRates, loadTrips]);
+
+  // Reset data initialization flag on logout
+  useEffect(() => {
+    if (!isAuthenticated) {
+      hasInitializedData.current = false;
+      // Cleanup sync subscription
+      if (syncCleanup.current) {
+        syncCleanup.current();
+        syncCleanup.current = null;
+      }
+    }
   }, [isAuthenticated]);
 
   // Load expenses when active trip changes
   useEffect(() => {
-    if (!activeTrip?.id || !isAuthenticated) return;
+    if (!activeTripId || !isAuthenticated) return;
+    loadExpenses(activeTripId);
+  }, [activeTripId, isAuthenticated, loadExpenses]);
 
-    loadExpenses(activeTrip.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTrip?.id, isAuthenticated]);
+  // 네비게이션 뒤로가기 핸들러
+  const handleBack = useCallback(() => {
+    router.back();
+  }, [router]);
 
   // Show splash while initializing
   if (!isInitialized) {
@@ -143,11 +158,11 @@ export default function RootLayout() {
             presentation: "modal",
             headerLeft: () => (
               <TouchableOpacity
-                onPress={() => navigation.back()}
-                style={{
-                  padding: 4,
-                }}
+                onPress={handleBack}
+                style={{ padding: 4 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel="닫기"
+                accessibilityRole="button"
               >
                 <MaterialIcons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
@@ -167,11 +182,11 @@ export default function RootLayout() {
             presentation: "modal",
             headerLeft: () => (
               <TouchableOpacity
-                onPress={() => navigation.back()}
-                style={{
-                  padding: 4,
-                }}
+                onPress={handleBack}
+                style={{ padding: 4 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel="닫기"
+                accessibilityRole="button"
               >
                 <MaterialIcons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
